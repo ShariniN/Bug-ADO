@@ -1,0 +1,32 @@
+# Team-wide defaults. Personal settings go in ~/.rca/config.toml and override these.
+
+[ado]
+org_url = ""
+project = ""
+pat_env = "ADO_PAT"
+
+[git]
+release_branch_pattern = "release/(\\d+\\.\\d+)"
+legacy_cutoff = "9.6"
+current_pi = ""
+default_target_branch = "main"
+
+[tool]
+repo_url = ""   # git URL of this tool's repo, used for the update notice
+
+[repos]
+
+[fields]
+summary = "Custom.RCASummary"
+root_cause = "Custom.RootCause"
+impact = "Custom.ImpactAssessment"
+previous_versions = "Custom.PreviousVersions"
+related_ids = "Custom.RelatedIdentifiers"
+classification = "Custom.BugClassification"
+preventive_action = "Custom.PreventiveAction"
+lesson_learned = "Custom.LessonLearned"
+analysis_method = "Custom.AnalysisMethod"
+fix_description = "Custom.FixDescription"
+impacted_area = "Custom.ImpactedArea"
+culprit_commit = "Custom.CausingCommit"
+why_missed = "Custom.WhyMissed"
