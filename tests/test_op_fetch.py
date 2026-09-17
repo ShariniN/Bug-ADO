@@ -76,3 +76,44 @@ def test_fetch_branch_mode_diffs_against_default_target(git_repo, tmp_path):
     assert out["source"] == "branch" and out["pr"] is None
     assert out["base_sha"] == sha["ws"] and out["head_sha"] == sha["fix_src"]
     assert out["files"][0]["path"] == "pay.py"
+
+
+def test_fetch_branch_mode_missing_branch_is_repo_not_cloned(git_repo, tmp_path):
+    repo, sha = git_repo
+    cfg = make_cfg(tmp_path, repo)
+    routes = pr_routes(sha)
+    routes[("GET", "/workitems/100?")] = wi(100, "Bug", "Crash")
+    out = fetch(100, cfg, AdoClient(ORG, PROJ, FakeTransport(routes)), branch="nope/zzz", repo="Acme.Web")
+    assert out["error"]["code"] == "repo_not_cloned"
+
+
+def test_fetch_pr_id_selects_matching_linked_pr(git_repo, tmp_path):
+    repo, sha = git_repo
+    cfg = make_cfg(tmp_path, repo)
+    routes = pr_routes(sha)
+    routes[("GET", "/workitems/100?")] = wi(100, "Bug", "Crash", prs=[("repo-1", 55), ("repo-1", 99)])
+    out = fetch(100, cfg, AdoClient(ORG, PROJ, FakeTransport(routes)), pr_id=55)
+    assert out["pr"]["id"] == 55
+
+
+def test_fetch_pr_id_without_links_uses_repo_name(git_repo, tmp_path):
+    repo, sha = git_repo
+    cfg = make_cfg(tmp_path, repo)
+    routes = pr_routes(sha)
+    routes[("GET", "/workitems/100?")] = wi(100, "Bug", "Crash")
+    t = FakeTransport(routes)
+    out = fetch(100, cfg, AdoClient(ORG, PROJ, t), pr_id=55, repo="Acme.Web")
+    assert out["source"] == "pr" and out["pr"]["id"] == 55
+    assert any("/repositories/Acme.Web/pullrequests/55?" in c[1] for c in t.calls)
+
+
+def test_cache_keeps_uncapped_hunks_when_output_is_capped(git_repo, tmp_path, monkeypatch):
+    import rca_core.operations.fetch as fetch_mod
+    monkeypatch.setattr(fetch_mod, "FETCH_CAP_BYTES", 5)
+    repo, sha = git_repo
+    cfg = make_cfg(tmp_path, repo)
+    out = fetch(100, cfg, AdoClient(ORG, PROJ, FakeTransport(pr_routes(sha))))
+    assert out["truncated"] is True
+    assert out["files"][0]["hunks"] == []
+    cached = json.loads((cfg.cache_dir / "100.json").read_text(encoding="utf-8"))
+    assert cached["files_full"][0]["hunks"]

@@ -52,10 +52,16 @@ def fetch(bug_id: int, cfg: Config, client: AdoClient, pr_id: int | None = None,
     if branch is None:
         candidates = bug.pr_ids
         if pr_id is not None:
-            candidates = [c for c in candidates if c[1] == pr_id] or [(candidates[0][0], pr_id)] if candidates else []
+            matching = [c for c in candidates if c[1] == pr_id]
+            if matching:
+                candidates = matching
+            elif candidates:
+                candidates = [(candidates[0][0], pr_id)]
+            elif repo:
+                candidates = [(repo, pr_id)]
         if not candidates:
             raise RcaError("no_linked_pr", f"Bug {bug_id} has no linked pull request.",
-                           "Link the PR to the Bug in Azure DevOps, or pass the branch name and repo to use the local branch instead.")
+                           "Link the PR to the Bug in Azure DevOps, or pass pr_id together with repo=<name>, or pass the branch name and repo to use the local branch instead.")
         repo_id, chosen = candidates[-1]
         pr = client.get_pull_request(repo_id, chosen)
         repo_name = pr.repo_name
@@ -76,6 +82,9 @@ def fetch(bug_id: int, cfg: Config, client: AdoClient, pr_id: int | None = None,
         base_sha = g.merge_base(base_sha, head_sha)
     else:
         target = _resolve_target(g, cfg)
+        if not g.has_ref(branch):
+            raise RcaError("repo_not_cloned", f"Branch '{branch}' does not exist in the local clone at {g.path}.",
+                           f"Run 'git fetch origin' in {g.path} or check the branch name (try origin/{branch}).")
         head_sha = g.rev_parse(branch)
         base_sha = g.merge_base(target, head_sha)
 
