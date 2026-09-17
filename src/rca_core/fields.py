@@ -35,13 +35,9 @@ def validate_field_map(field_map: dict[str, str], available: list[dict]) -> list
     known = {f["referenceName"] for f in available}
     issues: list[dict] = []
     for section in SECTION_KEYS:
-        if section in field_map:
-            configured = field_map[section]
-            if configured not in known:
-                hint = configured.split(".")[-1]
-                issues.append({"section": section, "configured": configured, "suggestion": closest_field(hint, available)})
-        elif not field_map:
-            configured = ""
-            hint = SECTION_LABELS[section]
-            issues.append({"section": section, "configured": configured, "suggestion": closest_field(hint, available)})
+        configured = field_map.get(section, "")
+        if configured in known:
+            continue
+        hint = configured.split(".")[-1] if configured else SECTION_LABELS[section]
+        issues.append({"section": section, "configured": configured, "suggestion": closest_field(hint, available)})
     return issues

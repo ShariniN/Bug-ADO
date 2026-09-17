@@ -16,9 +16,7 @@ def test_validate_reports_missing_with_suggestion():
     issues = validate_field_map(
         {"root_cause": "Custom.RootCause", "lesson_learned": "Custom.LessonLearned"}, AVAILABLE
     )
-    assert issues == [
-        {"section": "lesson_learned", "configured": "Custom.LessonLearned", "suggestion": "Custom.LessonsLearned"}
-    ]
+    assert {"section": "lesson_learned", "configured": "Custom.LessonLearned", "suggestion": "Custom.LessonsLearned"} in issues
 
 
 def test_validate_reports_unconfigured_sections():
@@ -28,3 +26,10 @@ def test_validate_reports_unconfigured_sections():
 
 def test_closest_field_returns_none_when_nothing_similar():
     assert closest_field("Zebra Quotient", AVAILABLE) is None
+
+
+def test_validate_reports_unconfigured_sections_even_when_map_is_partial():
+    issues = validate_field_map({"summary": "Custom.Bogus"}, AVAILABLE)
+    sections = {i["section"] for i in issues}
+    assert "summary" in sections and "root_cause" in sections
+    assert len(issues) == 13
