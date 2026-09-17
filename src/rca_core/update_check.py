@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from importlib import metadata
@@ -20,7 +21,8 @@ def newer_tag(repo_url: str, current: str, runner=subprocess.run) -> str | None:
     if not repo_url:
         return None
     try:
-        proc = runner(["git", "ls-remote", "--tags", "--refs", repo_url], capture_output=True, text=True, timeout=5)
+        proc = runner(["git", "ls-remote", "--tags", "--refs", repo_url], capture_output=True, text=True, timeout=5,
+                      env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"})
     except Exception:
         return None
     if proc.returncode != 0:

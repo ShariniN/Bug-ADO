@@ -99,6 +99,7 @@ def fetch(bug_id: int, cfg: Config, client: AdoClient, pr_id: int | None = None,
 
     full = {"bug": to_dict(bug), "pr": to_dict(pr) if pr else None, "source": source, "repo": repo_name,
             "base_sha": base_sha, "head_sha": head_sha, "files_full": to_dict(files)}
-    path = write_cache(cfg, bug_id, full)
+    # A refetch invalidates any previously cached trace for this bug (write_cache merges, so clear it explicitly).
+    path = write_cache(cfg, bug_id, {**full, "trace": None})
     return {**{k: v for k, v in full.items() if k != "files_full"},
             "files": to_dict(capped), "truncated": truncated, "cache_path": str(path)}

@@ -12,9 +12,10 @@ Do not read repo files or run git yourself; the tools already did the searching.
 
 1. Parse arguments: first token is the bug id; optional `pr:N`, `branch:NAME`, `repo:NAME`.
 2. Call `rca_fetch(bug_id, pr_id, branch, repo)`.
-   - If it returns `error`: show `message` and `fix` verbatim and stop.
    - If `error.code == no_linked_pr`: ask the user for the PR id, or branch and repo name, then retry once.
+   - If it returns any other `error`: show `message` and `fix` verbatim and stop.
    - If `update_available` is set, print one line: `ado-rca <tool_version> → <update_available> available (reinstall the plugin).`
+   - If `truncated` is true, say in the draft that the diff shown was partial.
 3. Call `rca_trace(bug_id)`, then `rca_classify(bug_id)`. Stop on `error` as above.
 
 ## 2. Draft

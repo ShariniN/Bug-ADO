@@ -133,6 +133,18 @@ def test_fetch_missing_source_falls_back_to_merge_commit(git_repo, tmp_path):
     assert out["files"][0]["path"] == "pay.py"
 
 
+def test_refetch_clears_stale_trace(git_repo, tmp_path):
+    from rca_core.cache import read_cache, write_cache
+    repo, sha = git_repo
+    cfg = make_cfg(tmp_path, repo)
+    client = AdoClient(ORG, PROJ, FakeTransport(pr_routes(sha)))
+    fetch(100, cfg, client)
+    write_cache(cfg, 100, {"trace": {"bug_id": 100, "culprits": []}})
+    assert read_cache(cfg, 100).get("trace") is not None
+    fetch(100, cfg, client)
+    assert read_cache(cfg, 100).get("trace") is None
+
+
 def test_cache_keeps_uncapped_hunks_when_output_is_capped(git_repo, tmp_path, monkeypatch):
     import rca_core.operations.fetch as fetch_mod
     monkeypatch.setattr(fetch_mod, "FETCH_CAP_BYTES", 5)
