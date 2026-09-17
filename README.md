@@ -36,4 +36,5 @@ rca fetch 12345       # JSON output; same operations the MCP tools expose
 ```
 
 Manual CLI equivalents: `rca fetch|trace|classify|fields|publish|version`.
+Opt-in live smoke test against the real org: `RCA_LIVE=1 RCA_LIVE_BUG=<id> python -m pytest tests/test_live_smoke.py`.
 Release: bump `version` in `pyproject.toml`, `plugin/.claude-plugin/plugin.json`, and `plugin/.mcp.json` (the `@vX.Y.Z` ref), tag `vX.Y.Z`, push.
