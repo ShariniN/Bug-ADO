@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ado-rca": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/ShariniN/Bug-ADO.git", "rca-mcp"]
+    }
+  }
+}
