@@ -62,6 +62,18 @@ def test_trace_without_fetch_errors(git_repo, tmp_path):
     assert out["error"]["code"] == "fetch_first"
 
 
+def test_trace_picks_earliest_pr_when_commit_is_in_several(git_repo, tmp_path):
+    repo, sha = git_repo
+    cfg = make_cfg(tmp_path, repo)
+    r = routes_with_culprit_pr(sha)
+    r[("POST", "/pullrequestquery")] = {"results": [{sha["culprit"]: [{"pullRequestId": 900}, {"pullRequestId": 7}]}]}
+    client = AdoClient(ORG, PROJ, FakeTransport(r))
+    fetch(100, cfg, client)
+    out = trace(100, cfg, client)
+    assert "error" not in out, out
+    assert out["culprits"][0]["pr_id"] == 7
+
+
 def test_trace_notes_pure_addition_fallback(git_repo, tmp_path):
     from rca_core.cache import write_cache
     repo, sha = git_repo

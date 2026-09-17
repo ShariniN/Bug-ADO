@@ -57,7 +57,7 @@ def trace(bug_id: int, cfg: Config, client: AdoClient, repo_factory: Callable[..
         evidence.append(f"Culprit {sha[:8]} ({c.date}, {c.author}) '{c.subject}' authored {lines} of the removed line(s).")
 
         pr_ids = client.find_pr_ids_for_commit(pr_repo_id, sha) if pr_repo_id else []
-        pr_id = pr_ids[0] if pr_ids else g.merged_pr_id_from_history(sha, target_ref)
+        pr_id = min(pr_ids) if pr_ids else g.merged_pr_id_from_history(sha, target_ref)
         if pr_id and pr_repo_id:
             pr = client.get_pull_request(pr_repo_id, pr_id)
             c.pr_id, c.pr_title, c.work_items = pr.id, pr.title, pr.work_items
