@@ -6,8 +6,9 @@ from tests.conftest import FakeTransport
 FIELDS = {("GET", "/workitemtypes/Bug/fields"): {"value": [
     {"referenceName": "Custom.BugClassification", "name": "Bug Classification",
      "allowedValues": ["Legacy Bug", "Feature Bug", "Non-Feature Bug"]},
-    {"referenceName": "Custom.RootCause", "name": "Root Cause"}]},
-    ("GET", "/_apis/wit/fields?"): {"value": []}}
+    {"referenceName": "Custom.RootCause", "name": "Root Cause", "type": "string"}]},
+    ("GET", "/_apis/wit/fields?"): {"value": [
+        {"referenceName": "Custom.RootCause", "type": "string"}]}}
 
 
 def cfg(tmp_path):
@@ -31,6 +32,12 @@ def test_bad_classification_value_is_type_mismatch(tmp_path):
     out = publish(100, {"classification": "Legacy"}, cfg(tmp_path), client, dry_run=True)
     assert out["error"]["code"] == "field_type_mismatch"
     assert "Legacy Bug" in out["error"]["fix"]
+
+
+def test_overlong_single_line_string_value_is_type_mismatch(tmp_path):
+    client = AdoClient("https://dev.azure.com/a", "P", FakeTransport(FIELDS))
+    out = publish(100, {"root_cause": "x" * 300}, cfg(tmp_path), client, dry_run=True)
+    assert out["error"]["code"] == "field_type_mismatch"
 
 
 def test_live_publish_patches(tmp_path):

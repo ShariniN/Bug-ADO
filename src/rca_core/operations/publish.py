@@ -28,6 +28,10 @@ def publish(bug_id: int, sections: dict[str, str], cfg: Config, client: AdoClien
         if allowed and value not in allowed:
             raise RcaError("field_type_mismatch", f"Value '{value}' is not allowed for {ref}.",
                            f"Use one of: {', '.join(allowed)}.")
+        if available[ref].get("type") == "string" and len(value) > 255:
+            raise RcaError("field_type_mismatch",
+                           f"Value for {ref} (section {key}) is {len(value)} chars; single-line string fields hold at most 255.",
+                           "Shorten the text or map this section to an HTML/plain-text (multi-line) field.")
         patch[ref] = value
 
     if dry_run:
