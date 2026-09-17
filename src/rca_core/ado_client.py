@@ -33,7 +33,9 @@ class RequestsTransport:
             raise RcaError("auth_failed", "Azure DevOps rejected the PAT.",
                            "Check the PAT is not expired and has Work Items (read/write) and Code (read) scopes.")
         if resp.status_code == 404:
-            raise RcaError("not_found", f"404 for {url}", "")
+            raise RcaError("not_found", f"404 for {url}",
+                           "Check ado.org_url and ado.project in ~/.rca/config.toml, and that the repository, "
+                           "pull request or work item id still exists.")
         if resp.status_code >= 400:
             raise RcaError("publish_rejected" if method == "PATCH" else "ado_error",
                            f"{resp.status_code} from Azure DevOps: {resp.text[:300]}",

@@ -92,3 +92,13 @@ def test_bug_not_found_maps_to_rca_error():
 def test_requests_transport_auth_header():
     tr = RequestsTransport("pat123")
     assert tr.session.headers["Authorization"].startswith("Basic ")
+
+
+def test_requests_transport_404_carries_actionable_fix():
+    from types import SimpleNamespace
+    tr = RequestsTransport("pat123")
+    tr.session.request = lambda *a, **k: SimpleNamespace(status_code=404, content=b"", text="")
+    with pytest.raises(RcaError) as e:
+        tr.request("GET", "https://dev.azure.com/acme/Acme/_apis/git/repositories/r/pullrequests/1?api-version=7.1")
+    assert e.value.code == "not_found"
+    assert e.value.fix and "config.toml" in e.value.fix
