@@ -1,0 +1,153 @@
+from __future__ import annotations
+
+import base64
+import re
+from typing import Any, Protocol
+
+import requests
+
+from rca_core.errors import RcaError
+from rca_core.models import PullRequestInfo, WorkItemRef
+
+API = "api-version=7.1"
+_PR_LINK = re.compile(r"PullRequestId/[^%]+%2F([^%]+)%2F(\d+)$")
+_WI_URL = re.compile(r"/workItems/(\d+)$", re.IGNORECASE)
+
+
+class Transport(Protocol):
+    def request(self, method: str, url: str, json: Any = None, content_type: str = "application/json") -> Any: ...
+
+
+class RequestsTransport:
+    def __init__(self, pat: str, timeout: float = 30.0) -> None:
+        token = base64.b64encode(f":{pat}".encode()).decode()
+        self.session = requests.Session()
+        self.session.headers["Authorization"] = f"Basic {token}"
+        self.session.headers["Accept"] = "application/json"
+        self.timeout = timeout
+
+    def request(self, method: str, url: str, json: Any = None, content_type: str = "application/json") -> Any:
+        resp = self.session.request(method, url, json=json, headers={"Content-Type": content_type}, timeout=self.timeout)
+        # ADO answers 203 with an HTML sign-in page when the PAT is invalid.
+        if resp.status_code in (401, 203):
+            raise RcaError("auth_failed", "Azure DevOps rejected the PAT.",
+                           "Check the PAT is not expired and has Work Items (read/write) and Code (read) scopes.")
+        if resp.status_code == 404:
+            raise RcaError("not_found", f"404 for {url}", "")
+        if resp.status_code >= 400:
+            raise RcaError("publish_rejected" if method == "PATCH" else "ado_error",
+                           f"{resp.status_code} from Azure DevOps: {resp.text[:300]}",
+                           "Read the message above; usually a field name or value is invalid.")
+        return resp.json() if resp.content else {}
+
+
+class AdoClient:
+    def __init__(self, org_url: str, project: str, transport: Transport) -> None:
+        self.org = org_url.rstrip("/")
+        self.project = project
+        self.t = transport
+
+    # ---- URLs -------------------------------------------------------------
+    def _wit(self, path: str) -> str:
+        return f"{self.org}/{self.project}/_apis/wit/{path}"
+
+    def _git(self, repo_id: str, path: str) -> str:
+        return f"{self.org}/{self.project}/_apis/git/repositories/{repo_id}/{path}"
+
+    def work_item_url(self, id: int) -> str:
+        return f"{self.org}/{self.project}/_workitems/edit/{id}"
+
+    def pull_request_url(self, repo_name: str, pr_id: int) -> str:
+        return f"{self.org}/{self.project}/_git/{repo_name}/pullrequest/{pr_id}"
+
+    # ---- Work items -------------------------------------------------------
+    def get_work_item(self, id: int) -> dict:
+        try:
+            return self.t.request("GET", self._wit(f"workitems/{id}?$expand=relations&{API}"))
+        except RcaError as e:
+            if e.code == "not_found":
+                raise RcaError("bug_not_found", f"Work item {id} was not found in project {self.project}.",
+                               "Check the Bug ID and that ~/.rca/config.toml points at the right project.") from e
+            raise
+
+    def get_work_items(self, ids: list[int]) -> list[dict]:
+        if not ids:
+            return []
+        joined = ",".join(str(i) for i in ids)
+        return self.t.request("GET", self._wit(f"workitems?ids={joined}&$expand=relations&{API}")).get("value", [])
+
+    @staticmethod
+    def to_ref(w: dict) -> WorkItemRef:
+        f = w.get("fields", {})
+        return WorkItemRef(id=int(w["id"]), type=f.get("System.WorkItemType", ""),
+                           title=f.get("System.Title", "")[:80], iteration=f.get("System.IterationPath", ""),
+                           state=f.get("System.State", ""))
+
+    @staticmethod
+    def linked_pr_ids(w: dict) -> list[tuple[str, int]]:
+        out: list[tuple[str, int]] = []
+        for rel in w.get("relations", []) or []:
+            if rel.get("rel") == "ArtifactLink" and (m := _PR_LINK.search(rel.get("url", ""))):
+                out.append((m.group(1), int(m.group(2))))
+        return out
+
+    @staticmethod
+    def parent_id(w: dict) -> int | None:
+        for rel in w.get("relations", []) or []:
+            if rel.get("rel") == "System.LinkTypes.Hierarchy-Reverse" and (m := _WI_URL.search(rel.get("url", ""))):
+                return int(m.group(1))
+        return None
+
+    def parent_chain(self, id: int, max_depth: int = 5) -> list[WorkItemRef]:
+        chain: list[WorkItemRef] = []
+        current = self.get_work_item(id)
+        for _ in range(max_depth):
+            pid = self.parent_id(current)
+            if pid is None:
+                break
+            current = self.get_work_item(pid)
+            chain.append(self.to_ref(current))
+        return chain
+
+    # ---- Pull requests ----------------------------------------------------
+    def get_pull_request(self, repo_id: str, pr_id: int) -> PullRequestInfo:
+        pr = self.t.request("GET", self._git(repo_id, f"pullrequests/{pr_id}?{API}"))
+        commits_raw = self.t.request("GET", self._git(repo_id, f"pullrequests/{pr_id}/commits?{API}")).get("value", [])
+        wi_ids = [int(x["id"]) for x in self.t.request("GET", self._git(repo_id, f"pullrequests/{pr_id}/workitems?{API}")).get("value", [])]
+        work_items = [self.to_ref(w) for w in self.get_work_items(wi_ids)]
+        strip = lambda ref: ref.replace("refs/heads/", "")
+        return PullRequestInfo(
+            id=int(pr["pullRequestId"]), title=pr.get("title", ""),
+            repo_name=pr["repository"]["name"], repo_id=pr["repository"]["id"],
+            source_branch=strip(pr.get("sourceRefName", "")), target_branch=strip(pr.get("targetRefName", "")),
+            source_sha=pr.get("lastMergeSourceCommit", {}).get("commitId", ""),
+            target_sha=pr.get("lastMergeTargetCommit", {}).get("commitId", ""),
+            merge_sha=pr.get("lastMergeCommit", {}).get("commitId"),
+            status=pr.get("status", ""), work_items=work_items,
+            commits=[{"sha": c["commitId"], "subject": c.get("comment", "").splitlines()[0][:120] if c.get("comment") else "",
+                      "author": c.get("author", {}).get("name", ""), "date": c.get("author", {}).get("date", "")[:10]}
+                     for c in commits_raw],
+        )
+
+    def find_pr_ids_for_commit(self, repo_id: str, sha: str) -> list[int]:
+        body = {"queries": [{"items": [sha], "type": "commit"}]}
+        res = self.t.request("POST", self._git(repo_id, f"pullrequestquery?{API}"), json=body)
+        ids: list[int] = []
+        for group in res.get("results", []):
+            for prs in group.values():
+                ids.extend(int(p["pullRequestId"]) for p in prs)
+        return ids
+
+    # ---- Fields -----------------------------------------------------------
+    def bug_fields(self) -> list[dict]:
+        typed = self.t.request("GET", self._wit(f"workitemtypes/Bug/fields?$expand=allowedValues&{API}")).get("value", [])
+        all_fields = self.t.request("GET", f"{self.org}/_apis/wit/fields?{API}").get("value", [])
+        types = {f["referenceName"]: f.get("type", "") for f in all_fields}
+        return [{"referenceName": f["referenceName"], "name": f.get("name", ""),
+                 "type": types.get(f["referenceName"], ""), "allowedValues": f.get("allowedValues", [])}
+                for f in typed]
+
+    def patch_work_item(self, id: int, fields: dict[str, str]) -> dict:
+        ops = [{"op": "add", "path": f"/fields/{ref}", "value": val} for ref, val in fields.items()]
+        res = self.t.request("PATCH", self._wit(f"workitems/{id}?{API}"), json=ops, content_type="application/json-patch+json")
+        return {"id": res.get("id", id), "rev": res.get("rev"), "url": res.get("_links", {}).get("html", {}).get("href", self.work_item_url(id))}

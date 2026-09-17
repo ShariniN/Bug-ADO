@@ -53,3 +53,18 @@ def git_repo(tmp_path: Path) -> tuple[GitRepo, dict[str, str]]:
     _git(d, "checkout", "-q", "main")
 
     return GitRepo(d), {"c1": c1, "culprit": culprit, "ws": ws, "fix_src": fix_src, "fix": fix}
+
+
+class FakeTransport:
+    """Routes (METHOD, url substring) -> response json. Records every call."""
+
+    def __init__(self, routes: dict[tuple[str, str], object]) -> None:
+        self.routes = routes
+        self.calls: list[tuple[str, str, object]] = []
+
+    def request(self, method: str, url: str, json: object = None, content_type: str = "application/json") -> object:
+        self.calls.append((method, url, json))
+        for (m, sub), resp in self.routes.items():
+            if m == method and sub in url:
+                return resp(json) if callable(resp) else resp
+        raise AssertionError(f"unrouted {method} {url}")
