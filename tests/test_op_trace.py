@@ -60,3 +60,18 @@ def test_trace_without_fetch_errors(git_repo, tmp_path):
     cfg = make_cfg(tmp_path, repo)
     out = trace(999, cfg, AdoClient(ORG, PROJ, FakeTransport({})))
     assert out["error"]["code"] == "fetch_first"
+
+
+def test_trace_uses_configured_release_branch_pattern(git_repo, tmp_path):
+    repo, sha = git_repo
+    repo.run("branch", "stable/11.0", sha["culprit"])
+    cfg = make_cfg(tmp_path, repo)
+    cfg.release_branch_pattern = r"stable/(\d+\.\d+)"
+    r = pr_routes(sha)
+    r[("POST", "/pullrequestquery")] = {"results": [{}]}
+    client = AdoClient(ORG, PROJ, FakeTransport(r))
+    fetch(100, cfg, client)
+    out = trace(100, cfg, client)
+    top = out["culprits"][0]
+    assert top["release_branches"] == ["stable/11.0"]
+    assert top["earliest_version"] == "11.0"

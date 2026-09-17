@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Callable
 
 from rca_core.ado_client import AdoClient
@@ -70,7 +71,7 @@ def trace(bug_id: int, cfg: Config, client: AdoClient, repo_factory: Callable[..
         else:
             notes.append(f"No merging PR found for {sha[:8]} (direct commit or history rewritten).")
 
-        c.release_branches = [b for b in g.branches_containing(sha) if "release" in b.lower()]
+        c.release_branches = [b for b in g.branches_containing(sha) if re.search(cfg.release_branch_pattern, b)]
         c.earliest_version = earliest_version(c.release_branches, cfg.release_branch_pattern)
         if c.earliest_version:
             evidence.append(f"{sha[:8]} is contained in {', '.join(c.release_branches)}; earliest version {c.earliest_version}.")
