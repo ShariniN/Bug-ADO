@@ -1,5 +1,6 @@
 {
   "name": "ado-rca",
+  "description": "Azure DevOps bug RCA assistant plugin marketplace",
   "owner": { "name": "PeoplesHR Engineering" },
   "plugins": [
     {
