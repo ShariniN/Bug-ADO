@@ -52,7 +52,7 @@ def test_trace_falls_back_to_merge_history_when_query_empty(git_repo, tmp_path):
     # culprit was committed directly (no merge), so no PR either way; still ranked and versioned
     assert out["culprits"][0]["pr_id"] is None
     assert out["culprits"][0]["earliest_version"] == "10.1"
-    assert any("no merging PR" in n.lower() for n in out["confidence_notes"])
+    assert any("no merging pr" in n.lower() for n in out["confidence_notes"])
 
 
 def test_trace_without_fetch_errors(git_repo, tmp_path):
