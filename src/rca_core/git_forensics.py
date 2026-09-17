@@ -30,7 +30,7 @@ class GitRepo:
         return self.run("rev-parse", "--verify", f"{ref}^{{commit}}")
 
     def has_ref(self, ref: str) -> bool:
-        return subprocess.run(["git", "rev-parse", "--verify", "--quiet", ref], cwd=self.path,
+        return subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"], cwd=self.path,
                               capture_output=True).returncode == 0
 
     def current_branch(self) -> str:

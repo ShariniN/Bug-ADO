@@ -42,6 +42,12 @@ def test_merge_base_and_current_branch(git_repo):
     assert repo.has_ref("release/9.5") and not repo.has_ref("nope")
 
 
+def test_has_ref_is_false_for_absent_sha(git_repo):
+    repo, sha = git_repo
+    assert repo.has_ref(sha["c1"]) is True
+    assert repo.has_ref("f" * 40) is False
+
+
 def test_pure_addition_hunk_blames_three_surrounding_lines(git_repo):
     repo, sha = git_repo
     h = Hunk(old_path="pay.py", new_path="pay.py", old_start=2, old_len=0,

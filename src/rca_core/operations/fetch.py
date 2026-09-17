@@ -77,9 +77,15 @@ def fetch(bug_id: int, cfg: Config, client: AdoClient, pr_id: int | None = None,
     if pr is not None:
         head_sha, base_sha = pr.source_sha, pr.target_sha
         if not g.has_ref(head_sha):
-            raise RcaError("repo_not_cloned", f"Commit {head_sha[:8]} from PR {pr.id} is not in the local clone.",
-                           f"Run 'git fetch origin' in {g.path} (the PR branch may have been deleted; fetch refs/pull/{pr.id}/merge).")
-        base_sha = g.merge_base(base_sha, head_sha)
+            # Source branch deleted after a squash/rebase merge (ADO default): diff the merge commit itself.
+            if pr.merge_sha and g.has_ref(pr.merge_sha):
+                head_sha = pr.merge_sha
+                base_sha = g.rev_parse(f"{pr.merge_sha}^1")
+            else:
+                raise RcaError("repo_not_cloned", f"Commit {head_sha[:8]} from PR {pr.id} is not in the local clone.",
+                               f"Run 'git fetch origin' in {g.path} (the PR branch may have been deleted; fetch refs/pull/{pr.id}/merge).")
+        else:
+            base_sha = g.merge_base(base_sha, head_sha)
     else:
         target = _resolve_target(g, cfg)
         if not g.has_ref(branch):

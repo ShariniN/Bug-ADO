@@ -107,6 +107,32 @@ def test_fetch_pr_id_without_links_uses_repo_name(git_repo, tmp_path):
     assert any("/repositories/Acme.Web/pullrequests/55?" in c[1] for c in t.calls)
 
 
+def test_fetch_missing_pr_commit_without_merge_is_repo_not_cloned(git_repo, tmp_path):
+    repo, sha = git_repo
+    cfg = make_cfg(tmp_path, repo)
+    routes = pr_routes(sha)
+    pr = dict(routes[("GET", "/pullrequests/55?")])
+    pr["lastMergeSourceCommit"] = {"commitId": "f" * 40}
+    pr["lastMergeCommit"] = {"commitId": "e" * 40}
+    routes[("GET", "/pullrequests/55?")] = pr
+    out = fetch(100, cfg, AdoClient(ORG, PROJ, FakeTransport(routes)))
+    assert out["error"]["code"] == "repo_not_cloned"
+
+
+def test_fetch_missing_source_falls_back_to_merge_commit(git_repo, tmp_path):
+    repo, sha = git_repo
+    cfg = make_cfg(tmp_path, repo)
+    routes = pr_routes(sha)
+    pr = dict(routes[("GET", "/pullrequests/55?")])
+    pr["lastMergeSourceCommit"] = {"commitId": "f" * 40}
+    pr["lastMergeCommit"] = {"commitId": sha["fix"]}
+    routes[("GET", "/pullrequests/55?")] = pr
+    out = fetch(100, cfg, AdoClient(ORG, PROJ, FakeTransport(routes)))
+    assert "error" not in out, out
+    assert out["head_sha"] == sha["fix"] and out["base_sha"] == sha["ws"]
+    assert out["files"][0]["path"] == "pay.py"
+
+
 def test_cache_keeps_uncapped_hunks_when_output_is_capped(git_repo, tmp_path, monkeypatch):
     import rca_core.operations.fetch as fetch_mod
     monkeypatch.setattr(fetch_mod, "FETCH_CAP_BYTES", 5)
