@@ -201,7 +201,8 @@ shows verbatim. The skill never retries silently.
 
 - `pyproject.toml` with console scripts `rca` and `rca-mcp`. Installed by `uvx --from git+<repo-url> rca-mcp`
   (plugin `.mcp.json`), so teammates need only `uv` installed.
-- Plugin installed with `claude plugin add <repo-url>` (or marketplace entry pointing at the repo).
+- Plugin installed via `claude plugin marketplace add <repo-url>` then `claude plugin install ado-rca@ado-rca`; the
+  repo root carries `.claude-plugin/marketplace.json` pointing at `./plugin`.
 - Per-user config at `~/.rca/config.toml`; team defaults in the package. PAT only from an env var; never
   logged, never written.
 - Semantic version in `pyproject.toml`; `/rca` shows a one-line notice when the repo has a newer tag.
@@ -223,3 +224,4 @@ shows verbatim. The skill never retries silently.
 - Multi-repo fixes (a bug whose fix spans two repos): v1 handles the first repo and warns.
 - Automatic detection of the current PI from the ADO iteration calendar (config value in v1).
 - GitHub or non-ADO hosts.
+- `rca_trace` with explicit `repo` + `hunks` input (only the cached-fetch form is implemented).

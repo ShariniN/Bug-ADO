@@ -9,7 +9,12 @@ publishes to the Bug's fields after you confirm. Runs inside Claude Code as `/rc
 1. Install `uv` (once): `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
 2. Create an Azure DevOps PAT with **Work Items (read & write)** and **Code (read)** scopes and set it:
    `[Environment]::SetEnvironmentVariable("ADO_PAT", "<token>", "User")`
-3. In Claude Code: `claude plugin add https://github.com/ShariniN/Bug-ADO.git` (or add the marketplace entry your team publishes), then restart.
+3. In Claude Code, run once:
+   ```
+   claude plugin marketplace add https://github.com/ShariniN/Bug-ADO.git
+   claude plugin install ado-rca@ado-rca
+   ```
+   then restart Claude Code.
 4. Run `/rca-setup` once. Then `/rca <bug-id>`.
 
 ## How it works
@@ -31,4 +36,4 @@ rca fetch 12345       # JSON output; same operations the MCP tools expose
 ```
 
 Manual CLI equivalents: `rca fetch|trace|classify|fields|publish|version`.
-Release: bump `version` in `pyproject.toml` and `plugin/.claude-plugin/plugin.json`, tag `vX.Y.Z`, push.
+Release: bump `version` in `pyproject.toml`, `plugin/.claude-plugin/plugin.json`, and `plugin/.mcp.json` (the `@vX.Y.Z` ref), tag `vX.Y.Z`, push.

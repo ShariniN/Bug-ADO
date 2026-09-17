@@ -1,0 +1,11 @@
+{
+  "name": "ado-rca",
+  "owner": { "name": "PeoplesHR Engineering" },
+  "plugins": [
+    {
+      "name": "ado-rca",
+      "source": "./plugin",
+      "description": "Fill the Bug RCA template in Azure DevOps from the fix PR."
+    }
+  ]
+}
