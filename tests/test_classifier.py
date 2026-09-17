@@ -63,3 +63,12 @@ def test_no_culprits_is_non_feature_low(tmp_path):
     assert p.classification == "Non-Feature Bug"
     assert p.confidence == "low"
     assert p.needs_confirmation is True
+
+
+def test_non_feature_when_feature_is_in_a_different_pi(tmp_path):
+    feat = WorkItemRef(id=9, type="Feature", title="F", iteration="Proj\\PI-11\\Sprint 3")
+    p = classify(trace(culprit(earliest_version="10.1", parent_chain=[feat])), cfg(tmp_path, "Proj\\PI-12"))
+    assert p.classification == "Non-Feature Bug"
+    assert p.confidence == "medium"
+    assert p.needs_confirmation is True
+    assert "9" in p.reason

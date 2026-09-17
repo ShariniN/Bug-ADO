@@ -37,13 +37,21 @@ def classify(trace: TraceResult, cfg: Config) -> Proposal:
                 f"Culprit {top.sha[:8]} traces to Feature {feature.id} '{feature.title}' in current PI iteration '{feature.iteration}'.",
                 False,
             )
-        return Proposal(
-            FEATURE, "low",
-            f"Culprit {top.sha[:8]} traces to Feature {feature.id} '{feature.title}' (iteration '{feature.iteration}'), but the current PI is not configured or does not match.",
-            True,
-        )
+        elif not cfg.current_pi:
+            return Proposal(
+                FEATURE, "low",
+                f"Culprit {top.sha[:8]} traces to Feature {feature.id} '{feature.title}' (iteration '{feature.iteration}'), but the current PI is not configured or does not match.",
+                True,
+            )
+        # cfg.current_pi is set but doesn't match - fall through to Non-Feature
 
     where = f"release {top.earliest_version}" if top.earliest_version else "no release branch (unreleased)"
+    if feature is not None:
+        return Proposal(
+            NON_FEATURE, "medium",
+            f"Culprit {top.sha[:8]} traces to Feature {feature.id} '{feature.title}' (iteration '{feature.iteration}'), but its iteration is outside the current PI '{cfg.current_pi}'.",
+            True,
+        )
     return Proposal(
         NON_FEATURE, "medium",
         f"Culprit {top.sha[:8]} first appears in {where}, above the legacy cutoff, and its work items do not reach a Feature.",
