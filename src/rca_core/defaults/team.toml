@@ -12,7 +12,7 @@ current_pi = ""
 default_target_branch = "main"
 
 [tool]
-repo_url = ""   # git URL of this tool's repo, used for the update notice
+repo_url = "https://github.com/ShariniN/Bug-ADO.git"   # git URL of this tool's repo, used for the update notice
 
 [repos]
 
