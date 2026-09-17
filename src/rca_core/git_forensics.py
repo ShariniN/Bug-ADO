@@ -87,14 +87,24 @@ class GitRepo:
         return None
 
 
+def has_removed_lines(hunks: list[Hunk]) -> bool:
+    return any(removed_old_lines(h) for h in hunks if h.old_path and not is_whitespace_only(h))
+
+
 def blame_hunks(repo: GitRepo, base_sha: str, hunks: list[Hunk]) -> dict[str, int]:
-    """Culprit sha -> number of removed (pre-fix) lines authored by it. Whitespace-only hunks are skipped."""
+    """Culprit sha -> number of removed (pre-fix) lines authored by it. Whitespace-only hunks are skipped.
+
+    The pure-addition 3-line-window fallback only applies when the whole fix removes no lines at all; if the
+    fix removes lines elsewhere, addition-only hunks are skipped rather than blamed on their surrounding lines.
+    """
+    live = [h for h in hunks if h.old_path and not is_whitespace_only(h)]
+    any_removed = any(removed_old_lines(h) for h in live)
     counts: dict[str, int] = {}
-    for h in hunks:
-        if not h.old_path or is_whitespace_only(h):
-            continue
+    for h in live:
         lines = removed_old_lines(h)
         if not lines:
+            if any_removed:
+                continue
             # pure addition: the line the insertion follows plus one on each side
             lines = list(range(max(1, h.old_start - 1), h.old_start + 2))
         blamed = repo.blame_lines(base_sha, h.old_path, min(lines), max(lines))

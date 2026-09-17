@@ -62,6 +62,21 @@ def test_trace_without_fetch_errors(git_repo, tmp_path):
     assert out["error"]["code"] == "fetch_first"
 
 
+def test_trace_notes_pure_addition_fallback(git_repo, tmp_path):
+    from rca_core.cache import write_cache
+    repo, sha = git_repo
+    cfg = make_cfg(tmp_path, repo)
+    r = pr_routes(sha)
+    r[("POST", "/pullrequestquery")] = {"results": [{}]}
+    client = AdoClient(ORG, PROJ, FakeTransport(r))
+    fetch(100, cfg, client)
+    write_cache(cfg, 100, {"files_full": [{"path": "pay.py", "old_path": "pay.py", "change": "modify", "hunks": [
+        {"old_path": "pay.py", "new_path": "pay.py", "old_start": 2, "old_len": 0, "new_start": 3, "new_len": 1, "text": "+    c = 1"}]}]})
+    out = trace(100, cfg, client)
+    assert any("only added lines" in n for n in out["confidence_notes"])
+    assert out["culprits"]
+
+
 def test_trace_uses_configured_release_branch_pattern(git_repo, tmp_path):
     repo, sha = git_repo
     repo.run("branch", "stable/11.0", sha["culprit"])

@@ -54,3 +54,12 @@ def test_pure_addition_hunk_blames_three_surrounding_lines(git_repo):
              new_start=3, new_len=1, text="+    c = 1")
     counts = blame_hunks(repo, sha["ws"], [h])
     assert counts == {sha["c1"]: 2, sha["culprit"]: 1}
+
+
+def test_addition_hunks_are_ignored_when_fix_also_removes_lines(git_repo):
+    repo, sha = git_repo
+    diff = repo.diff(sha["ws"], sha["fix_src"])
+    real = parse_unified_diff(diff)[0].hunks
+    added = Hunk(old_path="pay.py", new_path="pay.py", old_start=3, old_len=0, new_start=4, new_len=1, text="+    # x")
+    counts = blame_hunks(repo, sha["ws"], real + [added])
+    assert counts == {sha["culprit"]: 1}

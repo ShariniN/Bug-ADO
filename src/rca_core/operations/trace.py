@@ -7,7 +7,7 @@ from rca_core.ado_client import AdoClient
 from rca_core.cache import read_cache, write_cache
 from rca_core.config import Config
 from rca_core.errors import RcaError, guarded
-from rca_core.git_forensics import GitRepo, blame_hunks
+from rca_core.git_forensics import GitRepo, blame_hunks, has_removed_lines
 from rca_core.models import Culprit, Hunk, TraceResult, to_dict
 from rca_core.versions import earliest_version
 
@@ -43,6 +43,8 @@ def trace(bug_id: int, cfg: Config, client: AdoClient, repo_factory: Callable[..
     notes: list[str] = []
     if not ranked:
         notes.append("No removed lines could be attributed; fix may be pure addition or files are new.")
+    if hunks and not has_removed_lines(hunks):
+        notes.append("Fix only added lines; culprits are blamed from the 3 lines around each insertion (low confidence).")
 
     # ADO accepts the repository name in place of its GUID, so branch mode (no cached PR) still works.
     pr_repo_id = (cached.get("pr") or {}).get("repo_id") or repo_name
