@@ -95,8 +95,8 @@ def blame_hunks(repo: GitRepo, base_sha: str, hunks: list[Hunk]) -> dict[str, in
             continue
         lines = removed_old_lines(h)
         if not lines:
-            # pure addition: look at the 3 lines around the insertion point
-            lines = [n for n in range(max(1, h.old_start - 2), h.old_start + 3)]
+            # pure addition: the line the insertion follows plus one on each side
+            lines = list(range(max(1, h.old_start - 1), h.old_start + 2))
         blamed = repo.blame_lines(base_sha, h.old_path, min(lines), max(lines))
         for n in lines:
             sha = blamed.get(n)

@@ -1,5 +1,6 @@
 from rca_core.diffparse import parse_unified_diff
 from rca_core.git_forensics import blame_hunks
+from rca_core.models import Hunk
 
 
 def test_diff_and_blame_find_culprit_ignoring_whitespace(git_repo):
@@ -39,3 +40,11 @@ def test_merge_base_and_current_branch(git_repo):
     assert repo.current_branch() == "main"
     assert repo.merge_base("bugfix/1", "main") == sha["ws"]
     assert repo.has_ref("release/9.5") and not repo.has_ref("nope")
+
+
+def test_pure_addition_hunk_blames_three_surrounding_lines(git_repo):
+    repo, sha = git_repo
+    h = Hunk(old_path="pay.py", new_path="pay.py", old_start=2, old_len=0,
+             new_start=3, new_len=1, text="+    c = 1")
+    counts = blame_hunks(repo, sha["ws"], [h])
+    assert counts == {sha["c1"]: 2, sha["culprit"]: 1}
