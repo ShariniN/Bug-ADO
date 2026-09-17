@@ -57,7 +57,14 @@ def run(argv: list[str]) -> dict:
         return classify_op(a.bug, cfg)
     if a.cmd == "fields":
         return fields_op(cfg, client)
-    sections = json.loads(Path(a.sections).read_text(encoding="utf-8"))
+    try:
+        sections = json.loads(Path(a.sections).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        return RcaError("invalid_sections", f"Could not read sections file {a.sections}: {e}",
+                        "Pass --sections <path> to a readable JSON file shaped {section_key: text}.").to_dict()
+    if not isinstance(sections, dict):
+        return RcaError("invalid_sections", "Sections file must contain a JSON object.",
+                        "Shape it as {section_key: text}.").to_dict()
     return publish(a.bug, sections, cfg, client, dry_run=not a.live)
 
 

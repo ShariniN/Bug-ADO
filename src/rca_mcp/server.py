@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mcp.server.mcpserver import MCPServer as FastMCP
+try:  # mcp >= 2.x renamed FastMCP
+    from mcp.server.mcpserver import MCPServer as FastMCP
+except ImportError:  # mcp 1.x
+    from mcp.server.fastmcp import FastMCP
 
 from rca_core.ado_client import AdoClient, RequestsTransport
 from rca_core.config import DEFAULT_USER_PATH, Config, load_config

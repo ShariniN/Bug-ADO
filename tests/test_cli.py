@@ -31,3 +31,19 @@ def test_publish_reads_sections_file_and_dry_runs(monkeypatch, tmp_path, capsys)
     assert cli.main(["publish", "9", "--sections", str(f)]) == 0
     assert calls == {"bug_id": 9, "sections": {"root_cause": "r"}, "dry_run": True}
     assert json.loads(capsys.readouterr().out)["dry_run"] is True
+
+
+def test_publish_missing_sections_file_is_json_error(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("ADO_PAT", "x")
+    monkeypatch.setattr(cli, "USER_CONFIG", tmp_path / "none.toml")
+    assert cli.main(["publish", "9", "--sections", str(tmp_path / "nope.json")]) == 1
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "invalid_sections"
+
+
+def test_publish_malformed_sections_file_is_json_error(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("ADO_PAT", "x")
+    monkeypatch.setattr(cli, "USER_CONFIG", tmp_path / "none.toml")
+    f = tmp_path / "bad.json"
+    f.write_text("{not json", encoding="utf-8")
+    assert cli.main(["publish", "9", "--sections", str(f)]) == 1
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "invalid_sections"
