@@ -1,6 +1,6 @@
 ---
 name: rca
-description: Fill the Azure DevOps Bug RCA from the fix. Usage: /rca <bug-id> [pr:<id>] [branch:<name> repo:<name>]
+description: "Fill the Azure DevOps Bug RCA from the fix. Usage: /rca <bug-id> [pr:<id>] [branch:<name> repo:<name>]"
 ---
 
 # /rca — Bug RCA from the fix
@@ -40,7 +40,7 @@ Then show, under the draft:
 
 ```
 Classification proposal: <classification> (<confidence>) — <reason>
-Notes: <each confidence_note on its own line, or "none">
+Notes: <each entry of confidence_notes from the rca_trace result on its own line, or "none">
 ```
 
 ## 3. Confirm
