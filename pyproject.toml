@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ado-rca"
+version = "0.1.0"
+description = "Azure DevOps bug RCA assistant: trace the culprit commit, classify, and publish RCA fields."
+requires-python = ">=3.11"
+dependencies = ["requests>=2.31", "mcp>=1.2"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+rca = "rca_cli.main:main"
+rca-mcp = "rca_mcp.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+rca_core = ["defaults/*.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
