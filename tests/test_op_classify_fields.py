@@ -51,3 +51,18 @@ def test_fields_op_reports_issues(tmp_path):
     assert out["fields"][0]["referenceName"] == "Custom.RootCause"
     assert all(i["section"] != "root_cause" for i in out["issues"])
     assert any(i["section"] == "summary" for i in out["issues"])
+
+
+def test_fields_op_auto_maps_exact_names(tmp_path):
+    (tmp_path / "config.toml").write_text('[fields]\nsummary = "Custom.Wrong"\n', encoding="utf-8")
+    cfg = load_config(user_path=tmp_path / "config.toml", env={})
+    cfg.home = tmp_path
+    t = FakeTransport({
+        ("GET", "/workitemtypes/Bug/fields"): {"value": [{"referenceName": "Custom.Summ", "name": "Summary of the Issue"},
+                                                          {"referenceName": "Custom.RootCause", "name": "Root Cause"}]},
+        ("GET", "/_apis/wit/fields?"): {"value": []}})
+    out = fields_op(cfg, AdoClient("https://dev.azure.com/a", "P", t), auto_map=True)
+    assert out["auto_mapped"] == {"summary": "Custom.Summ"}
+    assert all(i["section"] not in ("summary", "root_cause") for i in out["issues"])
+    assert load_config(user_path=tmp_path / "config.toml", env={}).fields["summary"] == "Custom.Summ"
+    assert (tmp_path / "status.json").exists()

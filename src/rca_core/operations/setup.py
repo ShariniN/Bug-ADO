@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+import json
+import tomllib
+from typing import Callable
+
+from rca_core.ado_client import AdoClient
+from rca_core.auth import TokenProvider
+from rca_core.config import Config, merge
+from rca_core.errors import RcaError, guarded
+from rca_core.tomlwrite import dumps
+from rca_core.update_check import current_version
+
+
+def _user_path(cfg: Config):
+    return cfg.home / "config.toml"
+
+
+def _status_file(cfg: Config) -> dict:
+    p = cfg.home / "status.json"
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+
+@guarded
+def status(cfg: Config, auth_factory: Callable[[Config], TokenProvider] = TokenProvider) -> dict:
+    user, signed_in, auth_error = None, False, None
+    if cfg.auth_mode == "pat":
+        signed_in = bool(cfg._env.get(cfg.pat_env))
+        user = f"PAT ({cfg.pat_env})" if signed_in else None
+    else:
+        try:
+            user = auth_factory(cfg).signed_in_user()
+            signed_in = user is not None
+        except RcaError as e:
+            auth_error = e.to_dict()["error"]
+    return {"signed_in": signed_in, "user": user, "auth_mode": cfg.auth_mode, "auth_error": auth_error,
+            "org_url": cfg.org_url, "project": cfg.project, "configured": bool(cfg.org_url and cfg.project),
+            "fields_ok": bool(_status_file(cfg).get("fields_ok")), "current_pi": cfg.current_pi,
+            "tool_version": current_version()}
+
+
+@guarded
+def login(cfg: Config, complete: bool = False, auth_factory: Callable[[Config], TokenProvider] = TokenProvider) -> dict:
+    if cfg.auth_mode == "pat":
+        return {"signed_in": bool(cfg._env.get(cfg.pat_env)), "user": f"PAT ({cfg.pat_env})", "auth_mode": "pat"}
+    return auth_factory(cfg).login(complete=complete)
+
+
+@guarded
+def options(cfg: Config, client: AdoClient) -> dict:
+    accounts = client.list_accounts()
+    projects = client.list_projects() if cfg.org_url else []
+    return {"accounts": accounts, "projects": projects}
+
+
+@guarded
+def save_config(cfg: Config, org_url: str | None = None, project: str | None = None, fields: dict | None = None,
+                current_pi: str | None = None, auth_mode: str | None = None) -> dict:
+    path = _user_path(cfg)
+    data = tomllib.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    patch: dict = {}
+    if org_url is not None:
+        patch.setdefault("ado", {})["org_url"] = org_url.rstrip("/")
+    if project is not None:
+        patch.setdefault("ado", {})["project"] = project
+    if fields:
+        patch["fields"] = dict(fields)
+    if current_pi is not None:
+        patch.setdefault("git", {})["current_pi"] = current_pi
+    if auth_mode is not None:
+        patch.setdefault("auth", {})["mode"] = auth_mode
+    data = merge(data, patch)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(dumps(data), encoding="utf-8")
+    return {"path": str(path), "saved": patch}
