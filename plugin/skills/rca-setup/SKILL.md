@@ -13,7 +13,8 @@ Use only the `rca_*` tools. Never ask for or store a PAT or password.
    - If the result has `device_code_message`: show it verbatim, ask the user to reply when done, then `rca_login(complete=true)`.
    - Report `user`.
 3. `rca_setup_options()`. If `accounts` has one entry use it; else list names and ask which. Save with
-   `rca_save_config(org_url=<account url>)`. Call `rca_setup_options()` again; pick the project the same way and save it.
+   `rca_save_config(org_url=<account url>)`. Call `rca_setup_options()` again; pick the project the same way
+   and save it with `rca_save_config(project=<name>)`.
 4. `rca_fields(auto_map=true)`. Report what was auto-mapped. For each remaining `issues[]` entry: show `section`,
    `configured`, `suggestion`, and the closest 5 field names from `fields[]`; ask the user to pick or type a reference
    name; then `rca_save_config(fields={section: ref})` and re-run `rca_fields(auto_map=true)` until `ok`.

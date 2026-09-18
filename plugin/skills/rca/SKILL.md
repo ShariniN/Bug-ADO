@@ -15,7 +15,9 @@ Do not read repo files or run git yourself; the tools already did the searching.
 2. Parse `$ARGUMENTS`: an id, a work item URL, `pr:<id>`, or nothing. Call
    `rca_fetch(bug=<id or url or "">, pr_id=<pr or null>, cwd=<the current working directory>)`.
    - `bug_not_resolved` / `no_fix_source`: show `message` and `fix`, then ask for the bug id or PR id and retry once.
-   - `not_signed_in`: call `rca_login()` and retry once.
+   - `not_signed_in`: call `rca_login()`. If the result has `device_code_message`, show it verbatim (and
+     `interactive_error` if present), ask the user to reply when they have signed in, then call
+     `rca_login(complete=true)`. Then retry `rca_fetch` once.
    - Any other `error`: show `message` and `fix` and stop.
    - Tell the user how the bug was resolved (`resolved.how`) and which fix source was used (`source`, PR id if any).
    - If `truncated` is true, say the diff shown was partial. If `update_available`, print one line about it.

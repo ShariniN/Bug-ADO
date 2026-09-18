@@ -48,7 +48,9 @@ work items → parent chain → release branches → earliest version. `rca_clas
 Claude drafts the 13 sections; you confirm; `rca_publish` PATCHes the Bug.
 
 Config: team defaults in `src/rca_core/defaults/team.toml`; personal overrides in `~/.rca/config.toml`.
-Cache: `~/.rca/cache/<bug>.json`. Credentials (browser token or PAT) are never written to disk.
+Cache: `~/.rca/cache/<bug>.json`. The PAT is only ever read from its environment variable. In browser mode
+the sign-in token cache is stored at `~/.rca/msal_cache.bin`, encrypted with Windows DPAPI (or the OS
+keyring) when `msal-extensions` can use it, otherwise as a plain file; delete that file to sign out.
 
 ## Develop
 
