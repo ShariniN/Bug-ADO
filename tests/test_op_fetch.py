@@ -31,15 +31,19 @@ def bug_route(prs=(("repo-1", 55),)):
 
 
 def pr_routes(source_sha=HEAD, target_sha=TARGET, merge_sha=MERGE, pr_id=55):
+    # Repo-scoped keys: a bare f"/pullrequests/{pr_id}?" is also a substring of the org-level
+    # pr_repo_id URL ({org}/_apis/git/pullrequests/{pr_id}?...), and FakeTransport answers the
+    # first substring match in insertion order, so an unscoped key here would silently steal
+    # org-level lookups too (see test_fetch_explicit_pr_id_resolves_repo_at_project_level).
     return {
-        ("GET", f"/pullrequests/{pr_id}?"): {
+        ("GET", f"/repositories/{R}/pullrequests/{pr_id}?"): {
             "pullRequestId": pr_id, "title": "Fix null total", "status": "completed",
             "repository": {"id": R, "name": "Acme.Web"},
             "sourceRefName": "refs/heads/bugfix/1", "targetRefName": "refs/heads/main",
             "lastMergeSourceCommit": {"commitId": source_sha}, "lastMergeTargetCommit": {"commitId": target_sha},
             "lastMergeCommit": {"commitId": merge_sha}},
-        ("GET", f"/pullrequests/{pr_id}/commits"): {"value": []},
-        ("GET", f"/pullrequests/{pr_id}/workitems"): {"value": []},
+        ("GET", f"/repositories/{R}/pullrequests/{pr_id}/commits"): {"value": []},
+        ("GET", f"/repositories/{R}/pullrequests/{pr_id}/workitems"): {"value": []},
     }
 
 
@@ -96,8 +100,10 @@ def test_fetch_explicit_pr_id_resolves_repo_at_project_level(tmp_path):
     r = {**bug_route(prs=()), **pr_routes(pr_id=77), **diff_routes(), **commit_route(R, HEAD),
          ("GET", "/_apis/git/pullrequests/77?"): {"pullRequestId": 77, "repository": {"id": R}},
          ("GET", f"/commits/{TARGET}/mergebases?otherCommitId={HEAD}"): {"value": [{"commitId": BASE}]}}
-    out = fetch(100, make_cfg(tmp_path), AdoClient(ORG, PROJ, FakeTransport(r)), pr_id=77)
+    t = FakeTransport(r)
+    out = fetch(100, make_cfg(tmp_path), AdoClient(ORG, PROJ, t), pr_id=77)
     assert out["pr"]["id"] == 77 and out["source"] == "pr"
+    assert any("/_apis/git/pullrequests/77?" in c[1] and "/repositories/" not in c[1] for c in t.calls)
 
 
 def test_fetch_no_pr_and_no_repo_is_no_fix_source(tmp_path):
