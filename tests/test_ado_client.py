@@ -102,3 +102,45 @@ def test_requests_transport_404_carries_actionable_fix():
         tr.request("GET", "https://dev.azure.com/acme/Acme/_apis/git/repositories/r/pullrequests/1?api-version=7.1")
     assert e.value.code == "not_found"
     assert e.value.fix and "config.toml" in e.value.fix
+
+
+from tests.ado_routes import commit_route, diff_route, history_routes, org_routes, repo_routes
+
+
+def test_org_discovery():
+    c = AdoClient("https://dev.azure.com/acme", "Acme", FakeTransport({**org_routes(), **repo_routes()}))
+    assert [a["name"] for a in c.list_accounts()] == ["acme", "other"]
+    assert c.list_projects() == ["Acme", "Beta"]
+    assert c.list_repositories() == [{"id": "repo-1", "name": "Acme.Web"}]
+
+
+def test_history_endpoints():
+    t = FakeTransport({**history_routes("repo-1", "src/pay.py", [("c3", "a\nb\n"), ("c2", "a\n"), ("c1", None)],
+                                        refs=[("release/9.5", "r1"), ("main", "m")], merge_bases={("c2", "r1"): ["c1"]}),
+                       **commit_route("repo-1", "c2", parents=["c1"]),
+                       **diff_route("repo-1", "c1", "c3", [("src/pay.py", "edit", None), ("new.txt", "add", None), ("old.txt", "delete", None), ("b.txt", "rename", "a.txt")])})
+    c = AdoClient("https://dev.azure.com/acme", "Acme", t)
+    assert c.path_history("repo-1", "src/pay.py", "c3") == ["c3", "c2", "c1"]
+    assert c.get_item_text("repo-1", "src/pay.py", "c2") == "a\n"
+    assert c.get_item_text("repo-1", "src/pay.py", "c1") is None
+    assert c.get_refs("repo-1") == [{"name": "release/9.5", "sha": "r1"}, {"name": "main", "sha": "m"}]
+    assert c.merge_bases("repo-1", "c2", "r1") == ["c1"]
+    info = c.get_commit("repo-1", "c2")
+    assert info == {"sha": "c2", "author": "Jo", "date": "2024-03-01", "subject": "msg", "parents": ["c1"]}
+    assert c.changed_paths("repo-1", "c1", "c3") == [
+        {"path": "src/pay.py", "old_path": "src/pay.py", "change": "modify"},
+        {"path": "new.txt", "old_path": "new.txt", "change": "add"},
+        {"path": "old.txt", "old_path": "old.txt", "change": "delete"},
+        {"path": "b.txt", "old_path": "a.txt", "change": "modify"}]
+
+
+def test_prs_by_branch_and_pr_repo_id():
+    t = FakeTransport({
+        ("GET", "/_apis/git/pullrequests?searchCriteria.sourceRefName=refs/heads/bugfix/1"): {"value": [
+            {"pullRequestId": 5, "status": "active", "repository": {"id": "repo-1", "name": "Acme.Web"}},
+            {"pullRequestId": 9, "status": "completed", "repository": {"id": "repo-1", "name": "Acme.Web"}}]},
+        ("GET", "/_apis/git/pullrequests/9?"): {"pullRequestId": 9, "repository": {"id": "repo-1"}},
+    })
+    c = AdoClient("https://dev.azure.com/acme", "Acme", t)
+    assert [p["id"] for p in c.find_prs_by_source_branch("bugfix/1")] == [9, 5]
+    assert c.pr_repo_id(9) == "repo-1"

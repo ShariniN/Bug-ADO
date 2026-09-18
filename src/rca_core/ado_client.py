@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import re
 from typing import Any, Callable, Protocol
+from urllib.parse import quote
 
 import requests
 
@@ -173,3 +174,78 @@ class AdoClient:
         ops = [{"op": "add", "path": f"/fields/{ref}", "value": val} for ref, val in fields.items()]
         res = self.t.request("PATCH", self._wit(f"workitems/{id}?{API}"), json=ops, content_type="application/json-patch+json")
         return {"id": res.get("id", id), "rev": res.get("rev"), "url": res.get("_links", {}).get("html", {}).get("href", self.work_item_url(id))}
+
+    # ---- Org discovery ----------------------------------------------------
+    VSSPS = "https://app.vssps.visualstudio.com/_apis"
+
+    def profile_me(self) -> dict:
+        return self.t.request("GET", f"{self.VSSPS}/profile/profiles/me?{API}")
+
+    def list_accounts(self) -> list[dict]:
+        me = self.profile_me()["id"]
+        res = self.t.request("GET", f"{self.VSSPS}/accounts?memberId={me}&{API}")
+        return sorted(({"name": a["accountName"], "url": a.get("accountUri", f"https://dev.azure.com/{a['accountName']}")}
+                       for a in res.get("value", [])), key=lambda a: a["name"].lower())
+
+    def list_projects(self) -> list[str]:
+        res = self.t.request("GET", f"{self.org}/_apis/projects?$top=500&{API}")
+        return sorted((p["name"] for p in res.get("value", [])), key=str.lower)
+
+    def list_repositories(self) -> list[dict]:
+        res = self.t.request("GET", f"{self.org}/{self.project}/_apis/git/repositories?{API}")
+        return [{"id": r["id"], "name": r["name"]} for r in res.get("value", [])]
+
+    def iteration_tree(self) -> dict:
+        return self.t.request("GET", self._wit(f"classificationnodes/Iterations?$depth=5&{API}"))
+
+    # ---- Git history --------------------------------------------------------
+    def get_refs(self, repo_id: str, filter: str = "heads/") -> list[dict]:
+        res = self.t.request("GET", self._git(repo_id, f"refs?filter={filter}&{API}"))
+        return [{"name": r["name"].removeprefix("refs/heads/"), "sha": r["objectId"]} for r in res.get("value", [])]
+
+    def merge_bases(self, repo_id: str, sha: str, other: str) -> list[str]:
+        res = self.t.request("GET", self._git(repo_id, f"commits/{sha}/mergebases?otherCommitId={other}&{API}"))
+        return [c["commitId"] for c in res.get("value", [])]
+
+    def get_commit(self, repo_id: str, sha: str) -> dict:
+        c = self.t.request("GET", self._git(repo_id, f"commits/{sha}?{API}"))
+        comment = c.get("comment", "") or ""
+        return {"sha": c["commitId"], "author": c.get("author", {}).get("name", ""),
+                "date": c.get("author", {}).get("date", "")[:10],
+                "subject": comment.splitlines()[0][:120] if comment else "", "parents": list(c.get("parents", []))}
+
+    def path_history(self, repo_id: str, path: str, sha: str, top: int = 100) -> list[str]:
+        url = self._git(repo_id, f"commits?searchCriteria.itemPath={quote(path)}&searchCriteria.itemVersion.version={sha}"
+                                 f"&searchCriteria.itemVersion.versionType=commit&searchCriteria.$top={top}&{API}")
+        return [c["commitId"] for c in self.t.request("GET", url).get("value", [])]
+
+    def get_item_text(self, repo_id: str, path: str, sha: str) -> str | None:
+        url = self._git(repo_id, f"items?path={quote(path)}&versionDescriptor.version={sha}"
+                                 f"&versionDescriptor.versionType=commit&includeContent=true&{API}")
+        return self.t.get_text(url)
+
+    def changed_paths(self, repo_id: str, base: str, head: str) -> list[dict]:
+        url = self._git(repo_id, f"diffs/commits?baseVersion={base}&baseVersionType=commit&targetVersion={head}"
+                                 f"&targetVersionType=commit&$top=1000&{API}")
+        out: list[dict] = []
+        for ch in self.t.request("GET", url).get("changes", []):
+            item = ch.get("item", {})
+            if item.get("gitObjectType", "blob") != "blob" or item.get("isFolder"):
+                continue
+            ct = (ch.get("changeType") or "edit").lower()
+            change = "delete" if "delete" in ct else "add" if "add" in ct else "modify"
+            path = item["path"].lstrip("/")
+            old = (ch.get("sourceServerItem") or item["path"]).lstrip("/")
+            out.append({"path": path, "old_path": old, "change": change})
+        return out
+
+    def find_prs_by_source_branch(self, branch: str) -> list[dict]:
+        url = (f"{self.org}/{self.project}/_apis/git/pullrequests?searchCriteria.sourceRefName=refs/heads/{branch}"
+               f"&searchCriteria.status=all&{API}")
+        prs = self.t.request("GET", url).get("value", [])
+        return sorted(({"id": int(p["pullRequestId"]), "repo_id": p["repository"]["id"],
+                        "repo_name": p["repository"].get("name", ""), "status": p.get("status", "")} for p in prs),
+                      key=lambda p: -p["id"])
+
+    def pr_repo_id(self, pr_id: int) -> str:
+        return self.t.request("GET", f"{self.org}/_apis/git/pullrequests/{pr_id}?{API}")["repository"]["id"]
