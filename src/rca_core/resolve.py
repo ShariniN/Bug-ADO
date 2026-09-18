@@ -15,7 +15,8 @@ def _hit(bug_id: int, how: str, pr_id: int | None = None, repo_id: str | None = 
     return {"bug_id": bug_id, "how": how, "pr_id": pr_id, "repo_id": repo_id}
 
 
-def resolve_bug(arg: str | int | None, client: AdoClient, cwd: Path | None) -> dict:
+def resolve_bug(arg: str | int | None, client: AdoClient, cwd: Path | None, bug_type: str = "Bug") -> dict:
+    accepted = {bug_type.lower(), "bug"}
     s = "" if arg is None else str(arg).strip()
     if s.isdigit():
         return _hit(int(s), "argument")
@@ -31,7 +32,7 @@ def resolve_bug(arg: str | int | None, client: AdoClient, cwd: Path | None) -> d
     branch = GitRepo(root).current_branch()
     for pr in client.find_prs_by_source_branch(branch):
         info = client.get_pull_request(pr["repo_id"], pr["id"])
-        bugs = [w for w in info.work_items if w.type.lower() == "bug"]
+        bugs = [w for w in info.work_items if w.type.lower() in accepted]
         if bugs:
             return _hit(bugs[0].id, f"PR {pr['id']} for branch {branch}", pr["id"], pr["repo_id"])
     for m in _BRANCH_ID.finditer(branch):
@@ -41,7 +42,7 @@ def resolve_bug(arg: str | int | None, client: AdoClient, cwd: Path | None) -> d
             if e.code in ("bug_not_found", "not_found"):
                 continue
             raise
-        if w.get("fields", {}).get("System.WorkItemType", "").lower() == "bug":
+        if w.get("fields", {}).get("System.WorkItemType", "").lower() in accepted:
             return _hit(int(m.group(1)), f"id in branch name {branch}")
     raise RcaError("bug_not_resolved", f"Could not infer a Bug from branch '{branch}'.",
                    "Pass the Bug ID explicitly, or link the Bug to the PR for this branch.")

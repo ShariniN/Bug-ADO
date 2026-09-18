@@ -8,6 +8,7 @@ from rca_core.ado_client import AdoClient
 from rca_core.ado_history import AdoHistory
 from rca_core.cache import write_cache
 from rca_core.config import Config
+from rca_core.defect_type import detect_bug_type
 from rca_core.diffparse import cap_hunks, parse_unified_diff
 from rca_core.errors import RcaError, guarded
 from rca_core.git_forensics import GitRepo, find_repo_root
@@ -67,9 +68,11 @@ def _origin_repo_id(g: GitRepo, client: AdoClient) -> str | None:
 def fetch(bug: str | int | None, cfg: Config, client: AdoClient, pr_id: int | None = None, cwd: Path | None = None,
           history_factory: Callable[..., AdoHistory] = AdoHistory, repo_factory: Callable[..., GitRepo] = GitRepo) -> dict:
     cwd = Path.cwd() if cwd is None else Path(cwd)
-    resolved = resolve_bug(bug, client, cwd)
+    bug_type = detect_bug_type(cfg, client)
+    resolved = resolve_bug(bug, client, cwd, bug_type=bug_type)
     bug_id = resolved["bug_id"]
-    info = bug_from_work_item(client.get_work_item(bug_id))
+    w = client.get_work_item(bug_id)
+    info = bug_from_work_item(w)
     pr: PullRequestInfo | None = None
     root = find_repo_root(cwd)
 
@@ -113,9 +116,12 @@ def fetch(bug: str | int | None, cfg: Config, client: AdoClient, pr_id: int | No
     files = parse_unified_diff(diff_text)
     capped, truncated = cap_hunks(files, FETCH_CAP_BYTES)
     truncated = truncated or paths_truncated
+    raw_fields = w.get("fields", {})
+    existing = {k: _plain(str(raw_fields[ref]))[:2000] for k, ref in cfg.fields.items() if raw_fields.get(ref)}
+    revised = str(raw_fields.get("System.ChangedDate", ""))[:10]
     full = {"bug_id": bug_id, "bug": to_dict(info), "pr": to_dict(pr) if pr else None, "source": source,
             "repo": repo_name, "repo_id": repo_id, "resolved": resolved, "base_sha": base_sha, "head_sha": head_sha,
-            "files_full": to_dict(files)}
+            "files_full": to_dict(files), "existing_rca": existing, "existing_rca_revised": revised}
     path = write_cache(cfg, bug_id, {**full, "trace": None, "pi": None})
     return {**{k: v for k, v in full.items() if k != "files_full"}, "files": to_dict(capped),
             "truncated": truncated, "cache_path": str(path)}

@@ -16,9 +16,17 @@ def _user_path(cfg: Config):
     return cfg.home / "config.toml"
 
 
-def _status_file(cfg: Config) -> dict:
+def read_status(cfg: Config) -> dict:
     p = cfg.home / "status.json"
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+
+def write_status(cfg: Config, **kv) -> dict:
+    merged = {**read_status(cfg), **kv}
+    p = cfg.home / "status.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(merged), encoding="utf-8")
+    return merged
 
 
 @guarded
@@ -39,7 +47,7 @@ def status(cfg: Config) -> dict:
         signed_in = user is not None
     return {"signed_in": signed_in, "user": user, "auth_mode": cfg.auth_mode, "auth_error": auth_error,
             "org_url": cfg.org_url, "project": cfg.project, "configured": bool(cfg.org_url and cfg.project),
-            "fields_ok": bool(_status_file(cfg).get("fields_ok")), "current_pi": cfg.current_pi,
+            "fields_ok": bool(read_status(cfg).get("fields_ok")), "current_pi": cfg.current_pi,
             "tool_version": current_version()}
 
 

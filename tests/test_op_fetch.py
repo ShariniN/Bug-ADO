@@ -20,13 +20,16 @@ def make_cfg(tmp_path):
     cfg = load_config(user_path=tmp_path / "cfg.toml", env={"ADO_PAT": "x"})
     cfg.org_url, cfg.project = ORG, PROJ
     cfg.home = tmp_path / ".rca"
+    cfg.bug_type = "Bug"
     return cfg
 
 
-def bug_route(prs=(("repo-1", 55),)):
+def bug_route(prs=(("repo-1", 55),), root_cause=None):
     w = wi(100, "Bug", "Crash", prs=list(prs))
     w["fields"].update({"System.AreaPath": "Acme\\Payroll", "System.Tags": "client-x; urgent",
                         "Microsoft.VSTS.TCM.ReproSteps": "<p>Open payslip</p>", "Custom.Environment": "UAT"})
+    if root_cause is not None:
+        w["fields"]["Custom.RootCause"] = root_cause
     return {("GET", "/workitems/100?"): w}
 
 
@@ -53,8 +56,8 @@ def diff_routes(base=BASE, head=HEAD):
             ("TEXT", f"items?path=pay.py&versionDescriptor.version={head}"): NEW}
 
 
-def routes_pr_ok():
-    r = {**bug_route(), **pr_routes(), **diff_routes(), **commit_route(R, HEAD)}
+def routes_pr_ok(root_cause=None):
+    r = {**bug_route(root_cause=root_cause), **pr_routes(), **diff_routes(), **commit_route(R, HEAD)}
     r[("GET", f"/commits/{HEAD}/mergebases?otherCommitId={TARGET}")] = {"value": [{"commitId": BASE}]}
     r[("GET", f"/commits/{TARGET}/mergebases?otherCommitId={HEAD}")] = {"value": [{"commitId": BASE}]}
     return r
@@ -68,8 +71,25 @@ def test_fetch_from_linked_pr_uses_ado_diff_and_caches(tmp_path):
     assert out["base_sha"] == BASE and out["head_sha"] == HEAD
     assert out["bug"]["repro_steps"] == "Open payslip" and out["bug"]["extra"] == {"Custom.Environment": "UAT"}
     assert out["files"][0]["path"] == "pay.py" and "-    b = None" in out["files"][0]["hunks"][0]["text"]
+    assert out["existing_rca"] == {} and out["existing_rca_revised"] == ""
     cached = json.loads((cfg.cache_dir / "100.json").read_text(encoding="utf-8"))
     assert cached["repo_id"] == R and cached["trace"] is None and cached["files_full"][0]["hunks"]
+    assert cached["existing_rca"] == {}
+
+
+def test_fetch_surfaces_existing_rca(tmp_path):
+    r = routes_pr_ok(root_cause="<p>old</p>")
+    r[("GET", "/workitems/100?")]["fields"]["System.ChangedDate"] = "2024-05-06T12:00:00Z"
+    out = fetch(100, make_cfg(tmp_path), AdoClient(ORG, PROJ, FakeTransport(r)))
+    assert "error" not in out, out
+    assert out["existing_rca"] == {"root_cause": "old"}
+    assert out["existing_rca_revised"] == "2024-05-06"
+
+
+def test_fetch_existing_rca_empty_when_no_fields_set(tmp_path):
+    out = fetch(100, make_cfg(tmp_path), AdoClient(ORG, PROJ, FakeTransport(routes_pr_ok())))
+    assert "error" not in out, out
+    assert out["existing_rca"] == {}
 
 
 def test_fetch_accepts_work_item_url(tmp_path):

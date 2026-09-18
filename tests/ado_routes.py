@@ -12,6 +12,10 @@ def org_routes(accounts=("acme", "other"), projects=("Acme", "Beta")):
     }
 
 
+def types_route(names):
+    return {("GET", "/_apis/wit/workitemtypes?"): {"value": [{"name": n} for n in names]}}
+
+
 def repo_routes(repo_id="repo-1", name="Acme.Web"):
     return {("GET", "/_apis/git/repositories?"): {"value": [{"id": repo_id, "name": name}]}}
 

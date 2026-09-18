@@ -207,8 +207,12 @@ class AdoClient:
         return ids
 
     # ---- Fields -----------------------------------------------------------
-    def bug_fields(self) -> list[dict]:
-        typed = self.t.request("GET", self._wit(f"workitemtypes/Bug/fields?$expand=allowedValues&{API}")).get("value", [])
+    def list_work_item_types(self) -> list[str]:
+        res = self.t.request("GET", self._wit(f"workitemtypes?{API}"))
+        return [t["name"] for t in res.get("value", [])]
+
+    def bug_fields(self, type_name: str = "Bug") -> list[dict]:
+        typed = self.t.request("GET", self._wit(f"workitemtypes/{quote(type_name)}/fields?$expand=allowedValues&{API}")).get("value", [])
         all_fields = self.t.request("GET", f"{self.org}/_apis/wit/fields?{API}").get("value", [])
         types = {f["referenceName"]: f.get("type", "") for f in all_fields}
         return [{"referenceName": f["referenceName"], "name": f.get("name", ""),

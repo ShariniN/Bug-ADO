@@ -44,6 +44,7 @@ def test_classify_detects_current_pi_when_not_configured(tmp_path):
 
 def test_fields_op_reports_issues(tmp_path):
     cfg = load_config(user_path=tmp_path / "c.toml", env={})
+    cfg.bug_type = "Bug"
     t = FakeTransport({
         ("GET", "/workitemtypes/Bug/fields"): {"value": [{"referenceName": "Custom.RootCause", "name": "Root Cause"}]},
         ("GET", "/_apis/wit/fields?"): {"value": []},
@@ -59,6 +60,7 @@ def test_fields_op_auto_maps_exact_names(tmp_path):
     (tmp_path / "config.toml").write_text('[fields]\nsummary = "Custom.Wrong"\n', encoding="utf-8")
     cfg = load_config(user_path=tmp_path / "config.toml", env={})
     cfg.home = tmp_path
+    cfg.bug_type = "Bug"
     t = FakeTransport({
         ("GET", "/workitemtypes/Bug/fields"): {"value": [{"referenceName": "Custom.Summ", "name": "Summary of the Issue"},
                                                           {"referenceName": "Custom.RootCause", "name": "Root Cause"}]},

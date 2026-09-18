@@ -62,6 +62,15 @@ def test_branch_name_id_from_subdirectory(git_repo):
     assert resolve_bug("", client(routes), sub)["bug_id"] == 12345
 
 
+def test_branch_scan_accepts_custom_bug_type(git_repo):
+    repo, sha = git_repo
+    repo.run("checkout", "-q", "-b", "bugfix/12345-crash")
+    routes = {("GET", "/_apis/git/pullrequests?searchCriteria.sourceRefName="): {"value": []},
+              ("GET", "/workitems/12345?"): wi(12345, "Issue", "Crash")}
+    out = resolve_bug(None, client(routes), repo.path, bug_type="Issue")
+    assert out["bug_id"] == 12345
+
+
 def test_only_real_work_item_urls_match():
     with pytest.raises(RcaError):
         resolve_bug("https://example.com/edit/123", client(), None)
