@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import re
 from typing import Any, Callable, Protocol
 from urllib.parse import quote
@@ -57,11 +58,21 @@ class RequestsTransport:
 
     def get_text(self, url: str, accept: str = "*/*") -> str | None:
         try:
-            return self._send("GET", url, None, "application/json", accept=accept).text
+            resp = self._send("GET", url, None, "application/json", accept=accept)
         except RcaError as e:
             if e.code == "not_found":
                 return None
             raise
+        resp.encoding = resp.encoding or "utf-8"
+        text = resp.text.lstrip("﻿")
+        if text.lstrip().startswith("{") and '"objectId"' in text[:300]:
+            try:
+                data = json.loads(text)
+            except ValueError:
+                return text
+            if isinstance(data, dict) and "content" in data:
+                return data.get("content", "")
+        return text
 
 
 class AdoClient:
@@ -222,7 +233,7 @@ class AdoClient:
     def get_item_text(self, repo_id: str, path: str, sha: str) -> str | None:
         url = self._git(repo_id, f"items?path={quote(path)}&versionDescriptor.version={sha}"
                                  f"&versionDescriptor.versionType=commit&includeContent=true&{API}")
-        return self.t.get_text(url)
+        return self.t.get_text(url, accept="text/plain")
 
     def changed_paths(self, repo_id: str, base: str, head: str) -> list[dict]:
         url = self._git(repo_id, f"diffs/commits?baseVersion={base}&baseVersionType=commit&targetVersion={head}"

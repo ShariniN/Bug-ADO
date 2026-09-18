@@ -134,6 +134,18 @@ def test_history_endpoints():
         {"path": "b.txt", "old_path": "a.txt", "change": "modify"}]
 
 
+def test_get_text_strips_bom_and_unwraps_json_item():
+    from types import SimpleNamespace
+
+    tr = RequestsTransport(pat="p")
+    tr.session.request = lambda *a, **k: SimpleNamespace(status_code=200, content=b"x", text="﻿hello", encoding=None)
+    assert tr.get_text("https://x/items") == "hello"
+
+    tr.session.request = lambda *a, **k: SimpleNamespace(
+        status_code=200, content=b"x", text='{"objectId":"x","content":"body"}', encoding=None)
+    assert tr.get_text("https://x/items") == "body"
+
+
 def test_prs_by_branch_and_pr_repo_id():
     t = FakeTransport({
         ("GET", "/_apis/git/pullrequests?searchCriteria.sourceRefName=refs/heads/bugfix/1"): {"value": [
