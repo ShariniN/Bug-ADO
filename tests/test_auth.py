@@ -13,9 +13,11 @@ ACC = [{"username": "jo@acme.com", "home_account_id": "h"}]
 TOK = {"access_token": "at-1"}
 
 
-def cfg(tmp_path, mode="browser", client_id="cid", tenant_id="tid"):
-    (tmp_path / "c.toml").write_text(
-        f'[auth]\nmode = "{mode}"\nclient_id = "{client_id}"\ntenant_id = "{tenant_id}"\n', encoding="utf-8")
+def cfg(tmp_path, mode="browser", client_id="cid", tenant_id="tid", persist_tokens=None):
+    text = f'[auth]\nmode = "{mode}"\nclient_id = "{client_id}"\ntenant_id = "{tenant_id}"\n'
+    if persist_tokens is not None:
+        text += f"persist_tokens = {'true' if persist_tokens else 'false'}\n"
+    (tmp_path / "c.toml").write_text(text, encoding="utf-8")
     return load_config(user_path=tmp_path / "c.toml", env={})
 
 
@@ -78,13 +80,29 @@ def test_interactive_timeout_falls_back_to_device_flow(tmp_path):
     assert "timeout" in result["interactive_error"]
 
 
+def test_persist_tokens_false_never_writes_cache(tmp_path):
+    app = FakeMsalApp(interactive=TOK)
+    c = cfg(tmp_path, persist_tokens=False)
+    tp = TokenProvider(c, app_factory=lambda c, cache: app)
+    app.accounts = ACC
+    tp.login()
+    assert not c.token_cache_path.exists()
+
+
+def test_invalidate_removes_account(tmp_path):
+    app = FakeMsalApp(accounts=ACC)
+    tp = provider(tmp_path, app)
+    tp.invalidate()
+    assert tp.signed_in_user() is None
+
+
 def test_transport_sends_bearer_from_provider():
     tr = RequestsTransport(token_provider=lambda: "tok")
     seen = {}
 
     def fake(method, url, json=None, headers=None, timeout=None):
         seen.update(headers=headers)
-        return SimpleNamespace(status_code=200, content=b"{}", text="{}", json=lambda: {})
+        return SimpleNamespace(status_code=200, headers={}, content=b"{}", text="{}", json=lambda: {})
 
     tr.session.request = fake
     tr.request("GET", "https://x")
@@ -93,7 +111,7 @@ def test_transport_sends_bearer_from_provider():
 
 def test_transport_get_text_returns_none_on_404():
     tr = RequestsTransport(pat="p")
-    tr.session.request = lambda *a, **k: SimpleNamespace(status_code=404, content=b"", text="")
+    tr.session.request = lambda *a, **k: SimpleNamespace(status_code=404, headers={}, content=b"", text="")
     assert tr.get_text("https://x/items") is None
 
 

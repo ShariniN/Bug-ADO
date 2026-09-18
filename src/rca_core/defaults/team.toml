@@ -4,6 +4,7 @@
 org_url = ""
 project = ""
 pat_env = "ADO_PAT"
+bug_type = ""          # "" = detect (Bug, else Issue); set to force a work item type name
 
 [git]
 release_branch_pattern = "release/(\\d+\\.\\d+)"
@@ -15,9 +16,10 @@ default_target_branch = "main"
 repo_url = "https://github.com/ShariniN/Bug-ADO.git"   # git URL of this tool's repo, used for the update notice
 
 [auth]
-mode = "browser"      # "browser" = Microsoft Entra sign-in (recommended); "pat" = personal access token in $pat_env
-client_id = ""        # Entra app registration for ado-rca (public client, redirect http://localhost)
-tenant_id = ""        # Entra tenant id
+mode = "browser"       # "browser" = Microsoft sign-in (no setup needed); "pat" = personal access token in $pat_env
+client_id = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"   # Azure CLI public client (Microsoft-owned; no app registration needed). Override with your own registration if your tenant blocks it.
+tenant_id = "organizations"                          # any work account; or your tenant id
+persist_tokens = true  # false = keep the sign-in only in memory (sign in once per Claude Code session)
 
 [fields]
 summary = "Custom.RCASummary"

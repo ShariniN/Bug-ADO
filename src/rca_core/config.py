@@ -35,6 +35,8 @@ class Config:
     auth_mode: str = "browser"
     client_id: str = ""
     tenant_id: str = ""
+    persist_tokens: bool = True
+    bug_type: str = ""
     fields: dict[str, str] = field(default_factory=dict)
     home: Path = field(default_factory=lambda: Path.home() / ".rca")
     _env: Mapping[str, str] = field(default_factory=dict, repr=False)
@@ -74,6 +76,7 @@ def load_config(user_path: Path | None = None, env: Mapping[str, str] | None = N
         org_url=ado.get("org_url", "").rstrip("/"),
         project=ado.get("project", ""),
         pat_env=ado.get("pat_env", "ADO_PAT"),
+        bug_type=ado.get("bug_type", ""),
         release_branch_pattern=git.get("release_branch_pattern", r"release/(\d+\.\d+)"),
         legacy_cutoff=str(git.get("legacy_cutoff", "9.6")),
         current_pi=git.get("current_pi", ""),
@@ -82,6 +85,7 @@ def load_config(user_path: Path | None = None, env: Mapping[str, str] | None = N
         auth_mode=auth.get("mode", "browser"),
         client_id=auth.get("client_id", ""),
         tenant_id=auth.get("tenant_id", ""),
+        persist_tokens=bool(auth.get("persist_tokens", True)),
         fields=dict(data.get("fields", {})),
         home=path.parent,
         _env=env,

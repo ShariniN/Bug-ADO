@@ -11,12 +11,14 @@ def test_tools_are_registered():
     }
 
 
-def test_rca_fetch_auth_not_configured(monkeypatch, tmp_path):
+def test_rca_fetch_not_signed_in(monkeypatch, tmp_path):
+    # Team defaults now ship a ready-to-use client id/tenant id, so an unconfigured browser-mode
+    # setup fails at "not signed in yet" (no account cached, no network call needed), not auth_not_configured.
     cfg_path = tmp_path / "cfg.toml"
     cfg_path.write_text('[auth]\nmode = "browser"\n', encoding="utf-8")
     monkeypatch.setattr(srv, "USER_CONFIG", cfg_path)
     out = srv.rca_fetch("1")
-    assert out["error"]["code"] == "auth_not_configured"
+    assert out["error"]["code"] == "not_signed_in"
 
 
 def test_rca_publish_defaults_to_dry_run(monkeypatch, tmp_path):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import time
 from typing import Any, Callable, Protocol
 from urllib.parse import quote
 
@@ -22,7 +23,8 @@ class Transport(Protocol):
 
 
 class RequestsTransport:
-    def __init__(self, pat: str | None = None, token_provider: Callable[[], str] | None = None, timeout: float = 30.0) -> None:
+    def __init__(self, pat: str | None = None, token_provider: Callable[[], str] | None = None, timeout: float = 30.0,
+                 sleep: Callable[[float], None] = time.sleep, on_unauthorized: Callable[[], None] | None = None) -> None:
         if not pat and token_provider is None:
             raise ValueError("RequestsTransport needs a PAT or a token provider")
         self.session = requests.Session()
@@ -31,25 +33,55 @@ class RequestsTransport:
             self.session.headers["Authorization"] = "Basic " + base64.b64encode(f":{pat}".encode()).decode()
         self.token_provider = token_provider
         self.timeout = timeout
+        self.sleep, self.on_unauthorized = sleep, on_unauthorized
 
-    def _send(self, method: str, url: str, json: Any, content_type: str, accept: str | None = None):
+    @staticmethod
+    def _delay_hint(resp) -> float:
+        for h in ("Retry-After", "X-RateLimit-Delay"):
+            v = resp.headers.get(h)
+            if v:
+                try:
+                    return min(float(v), 30.0)
+                except ValueError:
+                    continue
+        return 0.0
+
+    @staticmethod
+    def _kind(url: str) -> str:
+        for needle, kind in (("/workitems", "work item"), ("/pullrequests", "pull request"), ("/repositories/", "repository"),
+                             ("/projects", "project"), ("/accounts", "organization list")):
+            if needle in url.lower():
+                return kind
+        return "resource"
+
+    def _send(self, method: str, url: str, json: Any, content_type: str, accept: str | None = None, _retried: bool = False):
         headers = {"Content-Type": content_type}
         if accept:
             headers["Accept"] = accept
         if self.token_provider is not None:
             headers["Authorization"] = f"Bearer {self.token_provider()}"
         resp = self.session.request(method, url, json=json, headers=headers, timeout=self.timeout)
+        delay = self._delay_hint(resp)
+        if delay:
+            self.sleep(delay)
+        if resp.status_code == 429 and not _retried:
+            return self._send(method, url, json, content_type, accept, _retried=True)
         if resp.status_code in (401, 203):  # 203 = HTML sign-in page
-            raise RcaError("auth_failed", "Azure DevOps rejected the credentials.",
-                           "Sign in again with /rca-setup (browser mode) or check the PAT's expiry and scopes (pat mode).")
+            if self.token_provider is not None:
+                if self.on_unauthorized:
+                    self.on_unauthorized()
+                raise RcaError("not_signed_in", "Your Azure DevOps sign-in has expired or was rejected.",
+                               "Sign in again with rca_login (or /rca-setup) and retry.", debug=f"{resp.status_code} {url}")
+            raise RcaError("auth_failed", "Azure DevOps rejected the personal access token.",
+                           "Check the PAT's expiry and that it has Work Items (read/write) and Code (read) scopes.")
         if resp.status_code == 404:
-            raise RcaError("not_found", f"404 for {url}",
-                           "Check ado.org_url and ado.project in ~/.rca/config.toml, and that the repository, "
-                           "pull request or work item id still exists.")
+            raise RcaError("not_found", f"Azure DevOps has no such {self._kind(url)}.",
+                           "Check ado.org_url and ado.project in ~/.rca/config.toml, and that the id still exists.", debug=url)
         if resp.status_code >= 400:
             raise RcaError("publish_rejected" if method == "PATCH" else "ado_error",
-                           f"{resp.status_code} from Azure DevOps: {resp.text[:300]}",
-                           "Read the message above; usually a field name or value is invalid.")
+                           f"Azure DevOps rejected the request (HTTP {resp.status_code}).",
+                           "Usually a field name or value is invalid; ask for the debug detail if needed.",
+                           debug=f"{url} :: {resp.text[:300]}")
         return resp
 
     def request(self, method: str, url: str, json: Any = None, content_type: str = "application/json") -> Any:
@@ -105,10 +137,12 @@ class AdoClient:
             raise
 
     def get_work_items(self, ids: list[int]) -> list[dict]:
-        if not ids:
-            return []
-        joined = ",".join(str(i) for i in ids)
-        return self.t.request("GET", self._wit(f"workitems?ids={joined}&$expand=relations&{API}")).get("value", [])
+        out: list[dict] = []
+        for i in range(0, len(ids), 200):
+            chunk = ids[i:i + 200]
+            joined = ",".join(str(x) for x in chunk)
+            out.extend(self.t.request("GET", self._wit(f"workitems?ids={joined}&$expand=relations&{API}")).get("value", []))
+        return out
 
     @staticmethod
     def to_ref(w: dict) -> WorkItemRef:

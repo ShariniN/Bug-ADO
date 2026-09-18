@@ -43,7 +43,16 @@ def test_pat_read_from_env_and_missing_raises(tmp_path):
 
 def test_auth_defaults_and_override(tmp_path):
     cfg = load_config(user_path=tmp_path / "none.toml", env={})
-    assert cfg.auth_mode == "browser" and cfg.client_id == "" and cfg.token_cache_path.name == "msal_cache.bin"
+    assert cfg.auth_mode == "browser" and cfg.token_cache_path.name == "msal_cache.bin"
+    assert cfg.client_id == "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
+    assert cfg.persist_tokens is True
+    assert cfg.bug_type == ""
     (tmp_path / "u.toml").write_text('[auth]\nmode = "pat"\nclient_id = "abc"\n', encoding="utf-8")
     cfg2 = load_config(user_path=tmp_path / "u.toml", env={})
     assert cfg2.auth_mode == "pat" and cfg2.client_id == "abc"
+
+
+def test_persist_tokens_false_parses(tmp_path):
+    (tmp_path / "u.toml").write_text('[auth]\npersist_tokens = false\n', encoding="utf-8")
+    cfg = load_config(user_path=tmp_path / "u.toml", env={})
+    assert cfg.persist_tokens is False

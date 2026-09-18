@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 
 from rca_core.ado_client import AdoClient, RequestsTransport
@@ -97,11 +99,72 @@ def test_requests_transport_auth_header():
 def test_requests_transport_404_carries_actionable_fix():
     from types import SimpleNamespace
     tr = RequestsTransport(pat="pat123")
-    tr.session.request = lambda *a, **k: SimpleNamespace(status_code=404, content=b"", text="")
+    tr.session.request = lambda *a, **k: SimpleNamespace(status_code=404, headers={}, content=b"", text="")
     with pytest.raises(RcaError) as e:
         tr.request("GET", "https://dev.azure.com/acme/Acme/_apis/git/repositories/r/pullrequests/1?api-version=7.1")
     assert e.value.code == "not_found"
     assert e.value.fix and "config.toml" in e.value.fix
+
+
+def _resp(status_code, headers=None, content=b"", text="", json_body=None):
+    return SimpleNamespace(status_code=status_code, headers=headers or {}, content=content, text=text,
+                            json=lambda: json_body if json_body is not None else {})
+
+
+def test_retry_after_header_sleeps_capped():
+    sleeps = []
+    tr = RequestsTransport(pat="p", sleep=sleeps.append)
+    tr.session.request = lambda *a, **k: _resp(200, headers={"Retry-After": "120"}, content=b"x", json_body={"ok": True})
+    assert tr.request("GET", "https://x") == {"ok": True}
+    assert sleeps == [30.0]
+
+
+def test_429_retries_once():
+    sleeps = []
+    queue = [_resp(429, headers={"Retry-After": "1"}), _resp(200, headers={}, content=b"x", json_body={"ok": True})]
+    tr = RequestsTransport(pat="p", sleep=sleeps.append)
+    tr.session.request = lambda *a, **k: queue.pop(0)
+    assert tr.request("GET", "https://x") == {"ok": True}
+    assert sleeps == [1.0]
+
+
+def test_401_bearer_is_not_signed_in_and_invalidates():
+    calls = []
+    tr = RequestsTransport(token_provider=lambda: "tok", on_unauthorized=lambda: calls.append(1))
+    tr.session.request = lambda *a, **k: _resp(401)
+    with pytest.raises(RcaError) as e:
+        tr.request("GET", "https://x/workitems/5?")
+    assert calls == [1]
+    assert e.value.code == "not_signed_in"
+    assert e.value.debug is not None
+    assert "http" not in e.value.message.lower()
+
+
+def test_401_pat_is_auth_failed():
+    tr = RequestsTransport(pat="p")
+    tr.session.request = lambda *a, **k: _resp(401)
+    with pytest.raises(RcaError) as e:
+        tr.request("GET", "https://x")
+    assert e.value.code == "auth_failed"
+
+
+def test_404_message_names_kind():
+    tr = RequestsTransport(pat="p")
+    tr.session.request = lambda *a, **k: _resp(404)
+    with pytest.raises(RcaError) as e:
+        tr.request("GET", "https://x/workitems/5?")
+    assert "work item" in e.value.message
+    assert "http" not in e.value.message.lower()
+    assert "https://x/workitems/5?" in e.value.debug
+
+
+def test_get_work_items_chunks_at_200():
+    routes = {("GET", "/workitems?ids="): (lambda body: {"value": []})}
+    t = FakeTransport(routes)
+    AdoClient(ORG, PROJ, t).get_work_items(list(range(1, 451)))
+    calls = [c for c in t.calls if c[0] == "GET" and "/workitems?ids=" in c[1]]
+    assert len(calls) == 3
+    assert [len(c[1].split("ids=")[1].split("&")[0].split(",")) for c in calls] == [200, 200, 50]
 
 
 from tests.ado_routes import commit_route, diff_route, history_routes, org_routes, repo_routes
@@ -138,11 +201,11 @@ def test_get_text_strips_bom_and_unwraps_json_item():
     from types import SimpleNamespace
 
     tr = RequestsTransport(pat="p")
-    tr.session.request = lambda *a, **k: SimpleNamespace(status_code=200, content=b"x", text="﻿hello", encoding=None)
+    tr.session.request = lambda *a, **k: SimpleNamespace(status_code=200, headers={}, content=b"x", text="﻿hello", encoding=None)
     assert tr.get_text("https://x/items") == "hello"
 
     tr.session.request = lambda *a, **k: SimpleNamespace(
-        status_code=200, content=b"x", text='{"objectId":"x","content":"body"}', encoding=None)
+        status_code=200, headers={}, content=b"x", text='{"objectId":"x","content":"body"}', encoding=None)
     assert tr.get_text("https://x/items") == "body"
 
 

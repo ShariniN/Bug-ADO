@@ -9,14 +9,19 @@ from rca_core.errors import RcaError
 
 ADO_SCOPES = ["499b84ac-1321-427f-aa17-267ca6975798/.default"]
 
-# (client_id, tenant_id, token_cache_path) -> (cache, manual_persist, app), shared across TokenProvider instances
-# so we don't rebuild the MSAL app (and re-touch the encrypted cache file) on every call.
-_SESSIONS: dict[tuple[str, str, str], tuple[Any, bool, Any]] = {}
+# (client_id, tenant_id, token_cache_path, persist_tokens) -> (cache, manual_persist, app), shared across
+# TokenProvider instances so we don't rebuild the MSAL app (and re-touch the encrypted cache file) on every call.
+_SESSIONS: dict[tuple[str, str, str, bool], tuple[Any, bool, Any]] = {}
 
 
-def _build_cache(path: Path) -> tuple[Any, bool]:
-    """Return (token_cache, needs_manual_persist). Encrypted persistence (DPAPI on Windows) when available."""
+def _build_cache(path: Path, persist: bool = True) -> tuple[Any, bool]:
+    """Return (token_cache, needs_manual_persist). Encrypted persistence (DPAPI on Windows) when available.
+
+    When `persist` is False the cache lives only in memory for this process: never read from or written to disk.
+    """
     import msal
+    if not persist:
+        return msal.SerializableTokenCache(), False
     try:
         from msal_extensions import PersistedTokenCache, build_encrypted_persistence
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -53,9 +58,9 @@ class TokenProvider:
                                "Check network or VPN access to login.microsoftonline.com and retry.")
 
         if cache is None:
-            key = (cfg.client_id, cfg.tenant_id, str(cfg.token_cache_path))
+            key = (cfg.client_id, cfg.tenant_id, str(cfg.token_cache_path), cfg.persist_tokens)
             if key not in _SESSIONS:
-                built_cache, manual_persist = _build_cache(cfg.token_cache_path)
+                built_cache, manual_persist = _build_cache(cfg.token_cache_path, cfg.persist_tokens)
                 _SESSIONS[key] = (built_cache, manual_persist, build_app(built_cache))
             self.cache, self._manual_persist, self.app = _SESSIONS[key]
         else:
@@ -121,6 +126,12 @@ class TokenProvider:
                            "Run rca_login() again.")
         self._persist()
         return {"signed_in": True, "user": self.signed_in_user()}
+
+    def invalidate(self) -> None:
+        """Forget the cached account (after a 401) so the next call asks the user to sign in again."""
+        for acc in list(self.app.get_accounts()):
+            self.app.remove_account(acc)
+        self._persist()
 
     # PersistedTokenCache (encrypted/DPAPI) persists itself on every write; this only covers the plain-file fallback.
     def _persist(self) -> None:

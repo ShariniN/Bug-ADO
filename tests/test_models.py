@@ -32,3 +32,11 @@ def test_guarded_passes_through_result():
         return {"a": 1}
 
     assert ok() == {"a": 1}
+
+
+def test_rca_error_to_dict_omits_debug_when_unset():
+    assert "debug" not in RcaError("x", "m", "f").to_dict()["error"]
+
+
+def test_rca_error_to_dict_includes_debug_when_set():
+    assert RcaError("x", "m", "f", debug="d").to_dict()["error"]["debug"] == "d"

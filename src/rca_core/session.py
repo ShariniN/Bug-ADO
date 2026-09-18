@@ -12,4 +12,4 @@ def build_client(cfg: Config, app_factory: Callable[[Config, Any], Any] | None =
     if cfg.auth_mode == "pat":
         return AdoClient(cfg.org_url, cfg.project, RequestsTransport(pat=cfg.pat())), None
     auth = TokenProvider(cfg, **({"app_factory": app_factory} if app_factory else {}))
-    return AdoClient(cfg.org_url, cfg.project, RequestsTransport(token_provider=auth.token)), auth
+    return AdoClient(cfg.org_url, cfg.project, RequestsTransport(token_provider=auth.token, on_unauthorized=auth.invalidate)), auth

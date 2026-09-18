@@ -7,14 +7,18 @@ from typing import Any, Callable
 class RcaError(Exception):
     """Structured error surfaced to the skill. `fix` is a one-sentence instruction."""
 
-    def __init__(self, code: str, message: str, fix: str) -> None:
+    def __init__(self, code: str, message: str, fix: str, debug: str | None = None) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.fix = fix
+        self.debug = debug
 
     def to_dict(self) -> dict[str, Any]:
-        return {"error": {"code": self.code, "message": self.message, "fix": self.fix}}
+        out = {"error": {"code": self.code, "message": self.message, "fix": self.fix}}
+        if self.debug is not None:
+            out["error"]["debug"] = self.debug
+        return out
 
 
 def guarded(fn: Callable[..., dict[str, Any]]) -> Callable[..., dict[str, Any]]:

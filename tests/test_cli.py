@@ -24,8 +24,10 @@ def test_status_runs_without_network(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(cli, "USER_CONFIG", cfg_path)
     assert cli.main(["status"]) == 0
     out = json.loads(capsys.readouterr().out)
-    assert "signed_in" in out
-    assert out["auth_error"]["code"] == "auth_not_configured"
+    # Team defaults now ship a ready-to-use client id/tenant id, so an unconfigured browser-mode
+    # setup is just "not signed in yet" (no network call needed), not an auth_error.
+    assert out["signed_in"] is False
+    assert out["auth_error"] is None
 
 
 def test_publish_reads_sections_file_and_dry_runs(monkeypatch, tmp_path, capsys):
