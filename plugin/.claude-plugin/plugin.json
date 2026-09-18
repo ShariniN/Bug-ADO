@@ -1,6 +1,6 @@
 {
   "name": "ado-rca",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Fill the Bug RCA template in Azure DevOps from the fix PR: traces the culprit commit, proposes the classification, drafts every section, and publishes after your confirmation.",
   "author": { "name": "PeoplesHR Engineering" },
   "keywords": ["azure-devops", "rca", "bug"]

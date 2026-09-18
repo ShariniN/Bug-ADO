@@ -9,7 +9,8 @@ from rca_core.config import Config
 from rca_core.diffparse import removed_old_lines
 from rca_core.errors import RcaError, guarded
 from rca_core.git_forensics import blame_hunks, has_removed_lines
-from rca_core.models import Culprit, Hunk, TraceResult, to_dict
+from rca_core.models import Culprit, Hunk, PullRequestInfo, TraceResult, to_dict
+from rca_core.operations.testpaths import is_test_path
 from rca_core.versions import earliest_version
 
 MAX_CULPRITS = 3
@@ -66,11 +67,13 @@ def trace(bug_id: int, cfg: Config, client: AdoClient, history_factory: Callable
                      "to attribute and were ignored.")
 
     culprits: list[Culprit] = []
+    culprit_prs: list[PullRequestInfo | None] = []
     for sha, lines in ranked:
         info = hist.commit_info(sha)
         c = Culprit(sha=sha, author=info["author"], date=info["date"], subject=info["subject"], lines=lines)
         evidence.append(f"Culprit {sha[:8]} ({c.date}, {c.author}) '{c.subject}' authored {lines} of the removed line(s).")
         pr_ids = client.find_pr_ids_for_commit(repo_id, sha)
+        pr: PullRequestInfo | None = None
         if pr_ids:
             pr = client.get_pull_request(repo_id, min(pr_ids))
             c.pr_id, c.pr_title, c.work_items = pr.id, pr.title, pr.work_items
@@ -85,6 +88,7 @@ def trace(bug_id: int, cfg: Config, client: AdoClient, history_factory: Callable
                 notes.append(f"PR {pr.id} has no linked work items; feature attribution unavailable.")
         else:
             notes.append(f"No merging PR found for {sha[:8]} (direct commit or history rewritten).")
+        culprit_prs.append(pr)
         c.release_branches = hist.branches_containing(sha, cfg.release_branch_pattern)
         c.earliest_version = earliest_version(c.release_branches, cfg.release_branch_pattern)
         if c.earliest_version:
@@ -98,4 +102,17 @@ def trace(bug_id: int, cfg: Config, client: AdoClient, history_factory: Callable
 
     result = TraceResult(bug_id=bug_id, repo=repo_name, culprits=culprits, evidence=_cap(evidence, TRACE_CAP_BYTES), confidence_notes=notes)
     data = to_dict(result)
+
+    fix_paths = [f["path"] for f in cached["files_full"]]
+    test_paths = [p for p in fix_paths if is_test_path(p)][:10]
+    culprit_tests = None
+    top_pr = culprit_prs[0] if culprit_prs else None
+    if culprits and culprits[0].pr_id and top_pr:
+        try:
+            if top_pr.source_sha and top_pr.target_sha:
+                culprit_tests = any(is_test_path(c["path"]) for c in client.changed_paths(repo_id, top_pr.target_sha, top_pr.source_sha))
+        except RcaError:
+            culprit_tests = None
+    data["test_signal"] = {"fix_touched_tests": bool(test_paths), "culprit_pr_touched_tests": culprit_tests, "test_paths": test_paths}
+
     return {**data, "cache_path": str(write_cache(cfg, bug_id, {"trace": data}))}

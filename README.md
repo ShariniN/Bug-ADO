@@ -6,6 +6,10 @@ the fix diff itself when there is no linked PR), finds the PR and work items beh
 Feature / Non-Feature, drafts every section, and publishes to the Bug's fields after you confirm. Runs inside
 Claude Code as `/rca [bug-id]`.
 
+**Sign in with your Microsoft work account; nothing to register.** Browser sign-in works out of the box —
+no Entra app registration, no PAT, no password to hand out — because it ships pointed at the Azure CLI's
+public client by default.
+
 ## Install (teammates)
 
 1. Install `uv` (once): `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
@@ -21,9 +25,11 @@ Claude Code as `/rca [bug-id]`.
 4. Run `/rca` on a bug branch (no argument infers the bug from the current branch), or `/rca <bug-id>`.
    If you are not set up yet, `/rca` runs the setup steps inline the first time.
 
-## Team admin (once)
+## Team admin (optional hardening)
 
-Browser sign-in needs an Entra app registration for the team:
+Sign-in works for everyone by default — teammates need nothing registered. Register your own Entra app only
+if you want browser sign-in restricted to your tenant (rather than the shared Azure CLI public client) or to
+pre-fill `org_url` / `project` so nobody has to pick them:
 
 1. Register a new app in Entra ID (App registrations → New registration).
    - Supported account types: your organization's directory.
@@ -35,7 +41,8 @@ Browser sign-in needs an Entra app registration for the team:
    `src/rca_core/defaults/team.toml`, and set `org_url` / `project` there too so teammates don't need to
    pick them. Commit and release.
 
-Until the IDs are in `team.toml`, teammates can enter them during `/rca-setup` or use PAT mode.
+Until (or unless) the IDs are in `team.toml`, teammates sign in with the Azure CLI public client, or can use
+PAT mode.
 
 ### PAT fallback
 
@@ -47,11 +54,19 @@ write)** and **Code (read)** scopes, then set it in the env var named by `pat_en
 ## How it works
 
 `rca_fetch` → Bug + fix diff (linked PR, PR of the current branch, or the local branch diff, in that
-order) → diff hunks. `rca_trace` → blame pre-fix lines against Azure DevOps' file history → culprit commits →
-merging PR → work items → parent chain → release branches → earliest version. `rca_classify` → proposal with
-confidence. Claude drafts the 13 sections; you confirm; `rca_publish` PATCHes the Bug.
+order) → diff hunks, plus any `existing_rca` already on the Bug's fields (and `existing_rca_revised`, the date
+it was last changed) so Claude can offer to update rather than overwrite it. `rca_trace` → blame pre-fix lines
+against Azure DevOps' file history → culprit commits → merging PR → work items → parent chain → release
+branches → earliest version, plus a `test_signal` (whether the fix touched a test file, whether the culprit
+PR did, and which test paths) used to write the "Why Missed Earlier" section. `rca_classify` → proposal with
+confidence. Claude drafts the 13 sections; you confirm; `rca_publish` PATCHes the Bug — a dry run first
+returns any `warnings` (missing/short/off-list sections) for Claude to surface before the live publish.
 
 Config: team defaults in `src/rca_core/defaults/team.toml`; personal overrides in `~/.rca/config.toml`.
+`auth.persist_tokens` (default `true`) keeps the sign-in token cache on disk between runs; set it to `false`
+to keep sign-in in memory only (sign in again each Claude Code session). `ado.bug_type` pins the work item
+type RCA fields are read from/written to (e.g. `"Bug"`, `"Issue"`, `"Defect"`); left blank, it's detected
+once per project and cached.
 Cache: `~/.rca/cache/<bug>.json`. The PAT is only ever read from its environment variable. In browser mode
 the sign-in token cache is stored at `~/.rca/msal_cache.bin`, encrypted with Windows DPAPI (or the OS
 keyring) when `msal-extensions` can use it, otherwise as a plain file; delete that file to sign out.

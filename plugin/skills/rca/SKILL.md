@@ -21,6 +21,8 @@ Do not read repo files or run git yourself; the tools already did the searching.
    - Any other `error`: show `message` and `fix` and stop.
    - Tell the user how the bug was resolved (`resolved.how`) and which fix source was used (`source`, PR id if any).
    - If `truncated` is true, say the diff shown was partial. If `update_available`, print one line about it.
+   - If `existing_rca` is non-empty: say how many sections are filled and `existing_rca_revised`, then ask:
+     update (start from the existing text for those sections) or replace. Wait for the answer.
 3. `rca_trace(bug_id)`, then `rca_classify(bug_id)`. If `detected_pi` is set, mention it next to the proposal.
 
 ## 2. Draft
@@ -41,6 +43,8 @@ you will publish. Keep each section tight; no filler.
 - **Impacted Area** [impacted_area] — area path plus top-level folders of changed files, comma separated.
 - **Causing Commit** [culprit_commit] — `<sha> — <date> — <author> — <subject> (PR <id>)`.
 - **Why Missed Earlier** [why_missed] — concrete: no test covered the removed lines, culprit predates the client's config, only reproduces with data X, etc.
+  Use `test_signal`: if `fix_touched_tests` is false say no test was added with the fix; if `culprit_pr_touched_tests`
+  is false say the culprit PR added no tests; cite `test_paths` when true.
 
 Then show, under the draft:
 
@@ -59,5 +63,6 @@ Apply requested edits and re-show only the changed sections. Do not publish unti
 
 1. Build `sections` = {section_key: plain text of that section} for all 13 keys. Plain text, no markdown headings.
 2. Call `rca_publish(bug_id, sections, dry_run=True)`. On `error`, show `message` and `fix` and stop.
+   If the dry run returns `warnings`, show them and ask whether to publish anyway; only then call with `dry_run=False`.
 3. Call `rca_publish(bug_id, sections, dry_run=False)`.
 4. Report: `Published RCA to Bug <id> (rev <rev>): <url>`.
