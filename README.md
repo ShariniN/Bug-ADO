@@ -27,9 +27,9 @@ public client by default.
 
 ## Team admin (optional hardening)
 
-Sign-in works for everyone by default — teammates need nothing registered. Register your own Entra app only
-if you want browser sign-in restricted to your tenant (rather than the shared Azure CLI public client) or to
-pre-fill `org_url` / `project` so nobody has to pick them:
+Sign-in works for everyone by default — teammates need nothing registered. Register your own Entra app if your
+tenant's Conditional Access policies block the shared Azure CLI public client (sign-in fails with a Conditional
+Access error, e.g. AADSTS53003), or if you'd rather pre-fill `org_url` / `project` so nobody has to pick them:
 
 1. Register a new app in Entra ID (App registrations → New registration).
    - Supported account types: your organization's directory.
@@ -46,9 +46,10 @@ PAT mode.
 
 ### PAT fallback
 
-If browser sign-in isn't available (no Entra app yet, or a headless environment), set `mode = "pat"` under
-`[auth]` in `~/.rca/config.toml` (or team.toml) and create an Azure DevOps PAT with **Work Items (read &
-write)** and **Code (read)** scopes, then set it in the env var named by `pat_env` (default `ADO_PAT`):
+If browser sign-in isn't available (a headless environment, or your tenant blocks it and no team app
+registration is set up yet), set `mode = "pat"` under `[auth]` in `~/.rca/config.toml` (or team.toml) and
+create an Azure DevOps PAT with **Work Items (read & write)** and **Code (read)** scopes, then set it in the
+env var named by `pat_env` (default `ADO_PAT`):
 `[Environment]::SetEnvironmentVariable("ADO_PAT", "<token>", "User")`, and restart Claude Code.
 
 ## How it works
@@ -64,7 +65,8 @@ returns any `warnings` (missing/short/off-list sections) for Claude to surface b
 
 Config: team defaults in `src/rca_core/defaults/team.toml`; personal overrides in `~/.rca/config.toml`.
 `auth.persist_tokens` (default `true`) keeps the sign-in token cache on disk between runs; set it to `false`
-to keep sign-in in memory only (sign in again each Claude Code session). `ado.bug_type` pins the work item
+to keep the sign-in only in memory, scoped to one MCP session (the `rca` CLI runs as separate processes, so
+with `persist_tokens = false` it will always be signed out). `ado.bug_type` pins the work item
 type RCA fields are read from/written to (e.g. `"Bug"`, `"Issue"`, `"Defect"`); left blank, it's detected
 once per org/project and cached.
 Cache: `~/.rca/cache/<bug>.json`. The PAT is only ever read from its environment variable. In browser mode

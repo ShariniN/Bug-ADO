@@ -15,15 +15,15 @@ Do not read repo files or run git yourself; the tools already did the searching.
 2. Parse `$ARGUMENTS`: an id, a work item URL, `pr:<id>`, or nothing. Call
    `rca_fetch(bug=<id or url or "">, pr_id=<pr or null>, cwd=<the current working directory>)`.
    - `bug_not_resolved` / `no_fix_source`: show `message` and `fix`, then ask for the bug id or PR id and retry once.
-   - `not_signed_in`: call `rca_login()`. If the result has `device_code_message`, show it verbatim (and
-     `interactive_error` if present), ask the user to reply when they have signed in, then call
-     `rca_login(complete=true)`. Then retry `rca_fetch` once.
    - Any other `error`: show `message` and `fix` and stop.
    - Tell the user how the bug was resolved (`resolved.how`) and which fix source was used (`source`, PR id if any).
    - If `truncated` is true, say the diff shown was partial. If `update_available`, print one line about it.
-   - If `existing_rca` is non-empty: say how many sections are filled and `existing_rca_revised`, then ask:
-     update (start from the existing text for those sections) or replace. Wait for the answer.
+   - If `existing_rca` is non-empty: say how many sections are filled and that the bug last changed
+     `<existing_rca_revised>`, then ask: update (start from the existing text for those sections) or replace.
+     Wait for the answer.
 3. `rca_trace(bug_id)`, then `rca_classify(bug_id)`. If `detected_pi` is set, mention it next to the proposal.
+
+If any tool returns `not_signed_in`, call `rca_login()` (device-code branch as in step 1) and retry that tool once.
 
 ## 2. Draft
 
@@ -63,6 +63,6 @@ Apply requested edits and re-show only the changed sections. Do not publish unti
 
 1. Build `sections` = {section_key: plain text of that section} for all 13 keys. Plain text, no markdown headings.
 2. Call `rca_publish(bug_id, sections, dry_run=True)`. On `error`, show `message` and `fix` and stop.
-   If the dry run returns `warnings`, show them and ask whether to publish anyway; only then call with `dry_run=False`.
+   If the dry run's `warnings` list is non-empty, show it and ask whether to publish anyway; only then call with `dry_run=False`.
 3. Call `rca_publish(bug_id, sections, dry_run=False)`.
 4. Report: `Published RCA to Bug <id> (rev <rev>): <url>`.
