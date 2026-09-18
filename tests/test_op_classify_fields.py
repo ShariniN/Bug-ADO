@@ -1,3 +1,5 @@
+import tomllib
+
 from rca_core.ado_client import AdoClient
 from rca_core.cache import write_cache
 from rca_core.config import load_config
@@ -66,3 +68,5 @@ def test_fields_op_auto_maps_exact_names(tmp_path):
     assert all(i["section"] not in ("summary", "root_cause") for i in out["issues"])
     assert load_config(user_path=tmp_path / "config.toml", env={}).fields["summary"] == "Custom.Summ"
     assert (tmp_path / "status.json").exists()
+    written = tomllib.loads((tmp_path / "config.toml").read_text(encoding="utf-8"))
+    assert set(written["fields"]) == {"summary"}

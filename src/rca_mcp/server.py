@@ -55,10 +55,12 @@ def rca_setup_options() -> dict:
 
 @mcp.tool()
 def rca_save_config(org_url: str | None = None, project: str | None = None, fields: dict[str, str] | None = None,
-                    current_pi: str | None = None, auth_mode: str | None = None) -> dict:
-    """Persist setup choices to ~/.rca/config.toml. Never pass secrets."""
+                    current_pi: str | None = None, auth_mode: str | None = None,
+                    client_id: str | None = None, tenant_id: str | None = None) -> dict:
+    """Persist setup choices to ~/.rca/config.toml. Never pass secrets. client_id/tenant_id are the team's
+    Entra app registration (public identifiers, not secrets)."""
     return save_config(load_config(user_path=USER_CONFIG), org_url=org_url, project=project, fields=fields,
-                       current_pi=current_pi, auth_mode=auth_mode)
+                       current_pi=current_pi, auth_mode=auth_mode, client_id=client_id, tenant_id=tenant_id)
 
 
 @mcp.tool()

@@ -47,3 +47,17 @@ def test_save_config_round_trips_through_load_config(tmp_path):
     assert again.org_url == "https://dev.azure.com/acme" and again.project == "Acme"
     assert again.fields["summary"] == "Custom.S" and again.current_pi == "Acme\\PI-14" and again.client_id == "cid"
     assert out["path"].endswith("config.toml")
+
+
+def test_save_config_client_id_and_tenant_id_round_trip(tmp_path):
+    c = cfg(tmp_path)
+    setup.save_config(c, client_id="cid2", tenant_id="tid2")
+    again = load_config(user_path=tmp_path / "config.toml", env={})
+    assert again.client_id == "cid2" and again.tenant_id == "tid2"
+
+
+def test_pat_mode_login_without_env_var_is_no_pat(tmp_path):
+    c = cfg(tmp_path, '[auth]\nmode = "pat"\n')
+    c._env = {}
+    out = setup.login(c)
+    assert out["error"]["code"] == "no_pat"

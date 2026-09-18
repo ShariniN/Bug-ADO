@@ -29,6 +29,7 @@ def run(argv: list[str]) -> dict:
     sc = sub.add_parser("save-config")
     sc.add_argument("--org-url"); sc.add_argument("--project")
     sc.add_argument("--current-pi"); sc.add_argument("--auth-mode")
+    sc.add_argument("--client-id"); sc.add_argument("--tenant-id")
     f = sub.add_parser("fetch"); f.add_argument("bug", nargs="?", default="")
     f.add_argument("--pr", type=int); f.add_argument("--cwd")
     sub.add_parser("trace").add_argument("bug", type=int)
@@ -49,7 +50,7 @@ def run(argv: list[str]) -> dict:
         return login(load_config(user_path=USER_CONFIG), complete=a.complete)
     if a.cmd == "save-config":
         return save_config(load_config(user_path=USER_CONFIG), org_url=a.org_url, project=a.project,
-                           current_pi=a.current_pi, auth_mode=a.auth_mode)
+                           current_pi=a.current_pi, auth_mode=a.auth_mode, client_id=a.client_id, tenant_id=a.tenant_id)
 
     cfg = load_config(user_path=USER_CONFIG)
     try:

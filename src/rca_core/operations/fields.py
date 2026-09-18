@@ -23,7 +23,7 @@ def fields_op(cfg: Config, client: AdoClient, auto_map: bool = False) -> dict:
                 accepted[issue["section"]] = ref
         if accepted:
             from rca_core.operations.setup import save_config
-            save_config(cfg, fields={**cfg.fields, **accepted})
+            save_config(cfg, fields=accepted)
             cfg.fields.update(accepted)
             issues = validate_field_map(cfg.fields, available)
     (cfg.home / "status.json").parent.mkdir(parents=True, exist_ok=True)

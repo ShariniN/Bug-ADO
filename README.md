@@ -1,8 +1,10 @@
 # ado-rca
 
-Fills the Bug RCA template in Azure DevOps from the fix PR. Traces the culprit commit with `git blame`,
-finds the PR and work items behind it, proposes Legacy / Feature / Non-Feature, drafts every section, and
-publishes to the Bug's fields after you confirm. Runs inside Claude Code as `/rca [bug-id]`.
+Fills the Bug RCA template in Azure DevOps from the fix PR. Traces the culprit commit by blaming the pre-fix
+lines against Azure DevOps' file history (via the REST API; the local branch is only a fallback for finding
+the fix diff itself when there is no linked PR), finds the PR and work items behind it, proposes Legacy /
+Feature / Non-Feature, drafts every section, and publishes to the Bug's fields after you confirm. Runs inside
+Claude Code as `/rca [bug-id]`.
 
 ## Install (teammates)
 
@@ -33,6 +35,8 @@ Browser sign-in needs an Entra app registration for the team:
    `src/rca_core/defaults/team.toml`, and set `org_url` / `project` there too so teammates don't need to
    pick them. Commit and release.
 
+Until the IDs are in `team.toml`, teammates can enter them during `/rca-setup` or use PAT mode.
+
 ### PAT fallback
 
 If browser sign-in isn't available (no Entra app yet, or a headless environment), set `mode = "pat"` under
@@ -43,9 +47,9 @@ write)** and **Code (read)** scopes, then set it in the env var named by `pat_en
 ## How it works
 
 `rca_fetch` → Bug + fix diff (linked PR, PR of the current branch, or the local branch diff, in that
-order) → local diff hunks. `rca_trace` → blame pre-fix lines → culprit commits → merging PR →
-work items → parent chain → release branches → earliest version. `rca_classify` → proposal with confidence.
-Claude drafts the 13 sections; you confirm; `rca_publish` PATCHes the Bug.
+order) → diff hunks. `rca_trace` → blame pre-fix lines against Azure DevOps' file history → culprit commits →
+merging PR → work items → parent chain → release branches → earliest version. `rca_classify` → proposal with
+confidence. Claude drafts the 13 sections; you confirm; `rca_publish` PATCHes the Bug.
 
 Config: team defaults in `src/rca_core/defaults/team.toml`; personal overrides in `~/.rca/config.toml`.
 Cache: `~/.rca/cache/<bug>.json`. The PAT is only ever read from its environment variable. In browser mode
@@ -61,6 +65,7 @@ rca fields            # check field mapping against your project
 rca fetch 12345       # JSON output; same operations the MCP tools expose
 ```
 
-Manual CLI equivalents: `rca fetch|trace|classify|fields|publish|version`.
+Manual CLI equivalents: `rca status|login|setup-options|save-config|fetch|trace|classify|fields|publish|version`.
 Opt-in live smoke test against the real org: `RCA_LIVE=1 RCA_LIVE_BUG=<id> python -m pytest tests/test_live_smoke.py`.
-Release: bump `version` in `pyproject.toml`, `plugin/.claude-plugin/plugin.json`, and `plugin/.mcp.json` (the `@vX.Y.Z` ref), tag `vX.Y.Z`, push.
+Release: bump `version` in `pyproject.toml`, `plugin/.claude-plugin/plugin.json`, and `plugin/.mcp.json` (the `@vX.Y.Z` ref), tag `vX.Y.Z`, push;
+fast-forward `main` to the release commit and push it (the marketplace installs from the default branch), then push the branch and tag.

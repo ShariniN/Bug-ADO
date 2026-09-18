@@ -42,7 +42,9 @@ def status(cfg: Config, auth_factory: Callable[[Config], TokenProvider] = TokenP
 @guarded
 def login(cfg: Config, complete: bool = False, auth_factory: Callable[[Config], TokenProvider] = TokenProvider) -> dict:
     if cfg.auth_mode == "pat":
-        return {"signed_in": bool(cfg._env.get(cfg.pat_env)), "user": f"PAT ({cfg.pat_env})", "auth_mode": "pat"}
+        if not cfg._env.get(cfg.pat_env):
+            cfg.pat()  # raises the standard no_pat RcaError
+        return {"signed_in": True, "user": f"PAT ({cfg.pat_env})", "auth_mode": "pat"}
     return auth_factory(cfg).login(complete=complete)
 
 
@@ -55,7 +57,8 @@ def options(cfg: Config, client: AdoClient) -> dict:
 
 @guarded
 def save_config(cfg: Config, org_url: str | None = None, project: str | None = None, fields: dict | None = None,
-                current_pi: str | None = None, auth_mode: str | None = None) -> dict:
+                current_pi: str | None = None, auth_mode: str | None = None,
+                client_id: str | None = None, tenant_id: str | None = None) -> dict:
     path = _user_path(cfg)
     data = tomllib.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     patch: dict = {}
@@ -69,6 +72,10 @@ def save_config(cfg: Config, org_url: str | None = None, project: str | None = N
         patch.setdefault("git", {})["current_pi"] = current_pi
     if auth_mode is not None:
         patch.setdefault("auth", {})["mode"] = auth_mode
+    if client_id is not None:
+        patch.setdefault("auth", {})["client_id"] = client_id
+    if tenant_id is not None:
+        patch.setdefault("auth", {})["tenant_id"] = tenant_id
     data = merge(data, patch)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(dumps(data), encoding="utf-8")

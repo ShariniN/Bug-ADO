@@ -10,8 +10,8 @@ Do not read repo files or run git yourself; the tools already did the searching.
 
 ## 1. Ready?
 
-1. `rca_status()`. If `configured` is false or `signed_in` is false, run the steps of the rca-setup skill inline
-   (login, org/project, fields) and continue — do not tell the user to run another command.
+1. `rca_status()`. If `configured` is false or `signed_in` is false, follow the rca-setup skill's steps inline
+   (do not tell the user to run it) (login, org/project, fields) and continue.
 2. Parse `$ARGUMENTS`: an id, a work item URL, `pr:<id>`, or nothing. Call
    `rca_fetch(bug=<id or url or "">, pr_id=<pr or null>, cwd=<the current working directory>)`.
    - `bug_not_resolved` / `no_fix_source`: show `message` and `fix`, then ask for the bug id or PR id and retry once.
