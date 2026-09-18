@@ -1,0 +1,108 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, Callable
+
+from rca_core.config import Config
+from rca_core.errors import RcaError
+
+ADO_SCOPES = ["499b84ac-1321-427f-aa17-267ca6975798/.default"]
+
+
+def _build_cache(path: Path) -> tuple[Any, bool]:
+    """Return (token_cache, needs_manual_persist). Encrypted persistence (DPAPI on Windows) when available."""
+    import msal
+    try:
+        from msal_extensions import PersistedTokenCache, build_encrypted_persistence
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return PersistedTokenCache(build_encrypted_persistence(str(path))), False
+    except Exception:
+        cache = msal.SerializableTokenCache()
+        if path.exists():
+            cache.deserialize(path.read_text(encoding="utf-8"))
+        return cache, True
+
+
+def _default_app_factory(cfg: Config, cache: Any) -> Any:
+    import msal
+    return msal.PublicClientApplication(
+        cfg.client_id, authority=f"https://login.microsoftonline.com/{cfg.tenant_id}", token_cache=cache)
+
+
+class TokenProvider:
+    """Entra ID sign-in for Azure DevOps. Never prints; every message is returned to the caller."""
+
+    def __init__(self, cfg: Config, app_factory: Callable[[Config, Any], Any] = _default_app_factory, cache: Any = None) -> None:
+        if not cfg.client_id or not cfg.tenant_id:
+            raise RcaError("auth_not_configured", "Browser sign-in needs the team's Entra app registration.",
+                           'Set auth.client_id and auth.tenant_id in team.toml (or ~/.rca/config.toml), or set auth.mode = "pat".')
+        self.cfg = cfg
+        if cache is None:
+            self.cache, self._manual_persist = _build_cache(cfg.token_cache_path)
+        else:
+            self.cache, self._manual_persist = cache, False
+        self.app = app_factory(cfg, self.cache)
+        self.flow_path = cfg.home / "device_flow.json"
+
+    def _account(self) -> dict | None:
+        accounts = self.app.get_accounts()
+        return accounts[0] if accounts else None
+
+    def signed_in_user(self) -> str | None:
+        acc = self._account()
+        return acc.get("username") if acc else None
+
+    def _silent(self) -> dict | None:
+        acc = self._account()
+        return self.app.acquire_token_silent(ADO_SCOPES, account=acc) if acc else None
+
+    def token(self) -> str:
+        result = self._silent()
+        if result and "access_token" in result:
+            self._persist()
+            return result["access_token"]
+        raise RcaError("not_signed_in", "You are not signed in to Azure DevOps.",
+                       "Run /rca-setup (or the rca_login tool) to sign in with your work account.")
+
+    def login(self, complete: bool = False) -> dict:
+        if complete:
+            return self._complete_device_flow()
+        result = self._silent()
+        if not (result and "access_token" in result):
+            try:
+                result = self.app.acquire_token_interactive(ADO_SCOPES, prompt="select_account")
+            except Exception:  # no browser or no free localhost port: use the device-code flow
+                return self._start_device_flow()
+        if not result or "access_token" not in result:
+            raise RcaError("auth_failed", f"Sign-in failed: {(result or {}).get('error_description', 'unknown error')[:300]}",
+                           'Retry rca_login; if it keeps failing, set auth.mode = "pat".')
+        self._persist()
+        return {"signed_in": True, "user": self.signed_in_user()}
+
+    def _start_device_flow(self) -> dict:
+        flow = self.app.initiate_device_flow(scopes=ADO_SCOPES)
+        if "user_code" not in flow:
+            raise RcaError("auth_failed", "Could not start device sign-in.",
+                           "Check auth.client_id/tenant_id and that public client flows are enabled on the app registration.")
+        self.flow_path.parent.mkdir(parents=True, exist_ok=True)
+        self.flow_path.write_text(json.dumps(flow), encoding="utf-8")
+        return {"signed_in": False, "device_code_message": flow["message"],
+                "verification_uri": flow["verification_uri"], "user_code": flow["user_code"]}
+
+    def _complete_device_flow(self) -> dict:
+        if not self.flow_path.exists():
+            raise RcaError("not_signed_in", "No device sign-in is in progress.", "Call rca_login() first.")
+        flow = json.loads(self.flow_path.read_text(encoding="utf-8"))
+        result = self.app.acquire_token_by_device_flow(flow)
+        self.flow_path.unlink(missing_ok=True)
+        if not result or "access_token" not in result:
+            raise RcaError("auth_failed", f"Device sign-in failed: {(result or {}).get('error_description', '')[:300]}",
+                           "Run rca_login() again.")
+        self._persist()
+        return {"signed_in": True, "user": self.signed_in_user()}
+
+    def _persist(self) -> None:
+        if self._manual_persist and getattr(self.cache, "has_state_changed", False):
+            self.cfg.token_cache_path.parent.mkdir(parents=True, exist_ok=True)
+            self.cfg.token_cache_path.write_text(self.cache.serialize(), encoding="utf-8")

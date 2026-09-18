@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import re
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 import requests
 
@@ -16,22 +16,30 @@ _WI_URL = re.compile(r"/workItems/(\d+)$", re.IGNORECASE)
 
 class Transport(Protocol):
     def request(self, method: str, url: str, json: Any = None, content_type: str = "application/json") -> Any: ...
+    def get_text(self, url: str, accept: str = "*/*") -> str | None: ...
 
 
 class RequestsTransport:
-    def __init__(self, pat: str, timeout: float = 30.0) -> None:
-        token = base64.b64encode(f":{pat}".encode()).decode()
+    def __init__(self, pat: str | None = None, token_provider: Callable[[], str] | None = None, timeout: float = 30.0) -> None:
+        if not pat and token_provider is None:
+            raise ValueError("RequestsTransport needs a PAT or a token provider")
         self.session = requests.Session()
-        self.session.headers["Authorization"] = f"Basic {token}"
         self.session.headers["Accept"] = "application/json"
+        if pat:
+            self.session.headers["Authorization"] = "Basic " + base64.b64encode(f":{pat}".encode()).decode()
+        self.token_provider = token_provider
         self.timeout = timeout
 
-    def request(self, method: str, url: str, json: Any = None, content_type: str = "application/json") -> Any:
-        resp = self.session.request(method, url, json=json, headers={"Content-Type": content_type}, timeout=self.timeout)
-        # ADO answers 203 with an HTML sign-in page when the PAT is invalid.
-        if resp.status_code in (401, 203):
-            raise RcaError("auth_failed", "Azure DevOps rejected the PAT.",
-                           "Check the PAT is not expired and has Work Items (read/write) and Code (read) scopes.")
+    def _send(self, method: str, url: str, json: Any, content_type: str, accept: str | None = None):
+        headers = {"Content-Type": content_type}
+        if accept:
+            headers["Accept"] = accept
+        if self.token_provider is not None:
+            headers["Authorization"] = f"Bearer {self.token_provider()}"
+        resp = self.session.request(method, url, json=json, headers=headers, timeout=self.timeout)
+        if resp.status_code in (401, 203):  # 203 = HTML sign-in page
+            raise RcaError("auth_failed", "Azure DevOps rejected the credentials.",
+                           "Sign in again with /rca-setup (browser mode) or check the PAT's expiry and scopes (pat mode).")
         if resp.status_code == 404:
             raise RcaError("not_found", f"404 for {url}",
                            "Check ado.org_url and ado.project in ~/.rca/config.toml, and that the repository, "
@@ -40,7 +48,19 @@ class RequestsTransport:
             raise RcaError("publish_rejected" if method == "PATCH" else "ado_error",
                            f"{resp.status_code} from Azure DevOps: {resp.text[:300]}",
                            "Read the message above; usually a field name or value is invalid.")
+        return resp
+
+    def request(self, method: str, url: str, json: Any = None, content_type: str = "application/json") -> Any:
+        resp = self._send(method, url, json, content_type)
         return resp.json() if resp.content else {}
+
+    def get_text(self, url: str, accept: str = "*/*") -> str | None:
+        try:
+            return self._send("GET", url, None, "application/json", accept=accept).text
+        except RcaError as e:
+            if e.code == "not_found":
+                return None
+            raise
 
 
 class AdoClient:

@@ -68,3 +68,10 @@ class FakeTransport:
             if m == method and sub in url:
                 return resp(json) if callable(resp) else resp
         raise AssertionError(f"unrouted {method} {url}")
+
+    def get_text(self, url: str, accept: str = "*/*"):
+        self.calls.append(("TEXT", url, None))
+        for (m, sub), resp in self.routes.items():
+            if m == "TEXT" and sub in url:
+                return resp(url) if callable(resp) else resp
+        raise AssertionError(f"unrouted TEXT {url}")

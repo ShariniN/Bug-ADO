@@ -32,7 +32,9 @@ class Config:
     current_pi: str
     default_target_branch: str
     repo_url: str
-    repos: dict[str, str] = field(default_factory=dict)
+    auth_mode: str = "browser"
+    client_id: str = ""
+    tenant_id: str = ""
     fields: dict[str, str] = field(default_factory=dict)
     home: Path = field(default_factory=lambda: Path.home() / ".rca")
     _env: Mapping[str, str] = field(default_factory=dict, repr=False)
@@ -40,6 +42,10 @@ class Config:
     @property
     def cache_dir(self) -> Path:
         return self.home / "cache"
+
+    @property
+    def token_cache_path(self) -> Path:
+        return self.home / "msal_cache.bin"
 
     def pat(self) -> str:
         value = self._env.get(self.pat_env, "")
@@ -50,23 +56,6 @@ class Config:
                 f"Create an Azure DevOps PAT with Work Items (read/write) and Code (read) scopes and set {self.pat_env}.",
             )
         return value
-
-    def repo_path(self, name: str) -> Path:
-        raw = self.repos.get(name)
-        if not raw:
-            raise RcaError(
-                "repo_not_configured",
-                f"No local path configured for repo '{name}'.",
-                f"Add [repos] \"{name}\" = \"<local clone path>\" to ~/.rca/config.toml or run /rca-setup.",
-            )
-        p = Path(raw)
-        if not (p / ".git").exists():
-            raise RcaError(
-                "repo_not_cloned",
-                f"Configured path for '{name}' is not a git clone: {p}",
-                f"Clone the repo to {p} or correct the path in ~/.rca/config.toml.",
-            )
-        return p
 
 
 def _team_defaults() -> dict[str, Any]:
@@ -80,7 +69,7 @@ def load_config(user_path: Path | None = None, env: Mapping[str, str] | None = N
     path = DEFAULT_USER_PATH if user_path is None else user_path
     if path.exists():
         data = merge(data, tomllib.loads(path.read_text(encoding="utf-8")))
-    ado, git, tool = data.get("ado", {}), data.get("git", {}), data.get("tool", {})
+    ado, git, tool, auth = data.get("ado", {}), data.get("git", {}), data.get("tool", {}), data.get("auth", {})
     return Config(
         org_url=ado.get("org_url", "").rstrip("/"),
         project=ado.get("project", ""),
@@ -90,7 +79,9 @@ def load_config(user_path: Path | None = None, env: Mapping[str, str] | None = N
         current_pi=git.get("current_pi", ""),
         default_target_branch=git.get("default_target_branch", "main"),
         repo_url=tool.get("repo_url", ""),
-        repos=dict(data.get("repos", {})),
+        auth_mode=auth.get("mode", "browser"),
+        client_id=auth.get("client_id", ""),
+        tenant_id=auth.get("tenant_id", ""),
         fields=dict(data.get("fields", {})),
         home=path.parent,
         _env=env,

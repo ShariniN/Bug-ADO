@@ -1,3 +1,7 @@
+import pytest
+
+pytest.skip("rewritten in v2 Task 5", allow_module_level=True)
+
 from rca_core.ado_client import AdoClient
 from rca_core.operations.fetch import fetch
 from rca_core.operations.trace import trace

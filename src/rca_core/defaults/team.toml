@@ -14,7 +14,10 @@ default_target_branch = "main"
 [tool]
 repo_url = "https://github.com/ShariniN/Bug-ADO.git"   # git URL of this tool's repo, used for the update notice
 
-[repos]
+[auth]
+mode = "browser"      # "browser" = Microsoft Entra sign-in (recommended); "pat" = personal access token in $pat_env
+client_id = ""        # Entra app registration for ado-rca (public client, redirect http://localhost)
+tenant_id = ""        # Entra tenant id
 
 [fields]
 summary = "Custom.RCASummary"

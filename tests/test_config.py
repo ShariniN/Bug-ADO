@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 
 from rca_core.config import Config, load_config, merge
@@ -25,15 +23,13 @@ def test_user_file_overrides_defaults(tmp_path):
     user = tmp_path / "config.toml"
     user.write_text(
         '[ado]\norg_url = "https://dev.azure.com/acme"\nproject = "Acme"\n'
-        '[git]\nlegacy_cutoff = "8.0"\ncurrent_pi = "Acme\\\\PI-3"\n'
-        '[repos]\n"Acme.Web" = "C:/src/web"\n',
+        '[git]\nlegacy_cutoff = "8.0"\ncurrent_pi = "Acme\\\\PI-3"\n',
         encoding="utf-8",
     )
     cfg = load_config(user_path=user, env={})
     assert cfg.org_url == "https://dev.azure.com/acme"
     assert cfg.legacy_cutoff == "8.0"
     assert cfg.current_pi == "Acme\\PI-3"
-    assert cfg.repos["Acme.Web"] == "C:/src/web"
 
 
 def test_pat_read_from_env_and_missing_raises(tmp_path):
@@ -45,15 +41,9 @@ def test_pat_read_from_env_and_missing_raises(tmp_path):
     assert e.value.code == "no_pat"
 
 
-def test_repo_path_errors(tmp_path):
-    cfg = load_config(user_path=tmp_path / "x.toml", env={})
-    with pytest.raises(RcaError) as e:
-        cfg.repo_path("Nope")
-    assert e.value.code == "repo_not_configured"
-    cfg.repos["Nope"] = str(tmp_path / "not-here")
-    with pytest.raises(RcaError) as e2:
-        cfg.repo_path("Nope")
-    assert e2.value.code == "repo_not_cloned"
-    (tmp_path / "here" / ".git").mkdir(parents=True)
-    cfg.repos["Here"] = str(tmp_path / "here")
-    assert cfg.repo_path("Here") == Path(tmp_path / "here")
+def test_auth_defaults_and_override(tmp_path):
+    cfg = load_config(user_path=tmp_path / "none.toml", env={})
+    assert cfg.auth_mode == "browser" and cfg.client_id == "" and cfg.token_cache_path.name == "msal_cache.bin"
+    (tmp_path / "u.toml").write_text('[auth]\nmode = "pat"\nclient_id = "abc"\n', encoding="utf-8")
+    cfg2 = load_config(user_path=tmp_path / "u.toml", env={})
+    assert cfg2.auth_mode == "pat" and cfg2.client_id == "abc"
