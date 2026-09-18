@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import subprocess
 from pathlib import Path
+from typing import Protocol
 
 from rca_core.diffparse import is_whitespace_only, removed_old_lines
 from rca_core.errors import RcaError
@@ -87,11 +88,15 @@ class GitRepo:
         return None
 
 
+class BlameSource(Protocol):
+    def blame_lines(self, sha: str, path: str, start: int, end: int) -> dict[int, str]: ...
+
+
 def has_removed_lines(hunks: list[Hunk]) -> bool:
     return any(removed_old_lines(h) for h in hunks if h.old_path and not is_whitespace_only(h))
 
 
-def blame_hunks(repo: GitRepo, base_sha: str, hunks: list[Hunk]) -> dict[str, int]:
+def blame_hunks(source: BlameSource, base_sha: str, hunks: list[Hunk]) -> dict[str, int]:
     """Culprit sha -> number of removed (pre-fix) lines authored by it. Whitespace-only hunks are skipped.
 
     The pure-addition 3-line-window fallback only applies when the whole fix removes no lines at all; if the
@@ -107,7 +112,7 @@ def blame_hunks(repo: GitRepo, base_sha: str, hunks: list[Hunk]) -> dict[str, in
                 continue
             # pure addition: the line the insertion follows plus one on each side
             lines = list(range(max(1, h.old_start - 1), h.old_start + 2))
-        blamed = repo.blame_lines(base_sha, h.old_path, min(lines), max(lines))
+        blamed = source.blame_lines(base_sha, h.old_path, min(lines), max(lines))
         for n in lines:
             sha = blamed.get(n)
             if sha:
