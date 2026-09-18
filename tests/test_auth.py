@@ -80,6 +80,17 @@ def test_interactive_timeout_falls_back_to_device_flow(tmp_path):
     assert "timeout" in result["interactive_error"]
 
 
+def test_login_refused_raises_actionable_auth_failed(tmp_path):
+    app = FakeMsalApp(interactive={"error": "invalid_grant",
+                                    "error_description": "AADSTS53003: blocked by Conditional Access"})
+    tp = provider(tmp_path, app)
+    with pytest.raises(RcaError) as e:
+        tp.login()
+    assert e.value.code == "auth_failed"
+    assert "Conditional Access" in e.value.fix
+    assert "device_start" not in app.calls
+
+
 def test_persist_tokens_false_never_writes_cache(tmp_path):
     app = FakeMsalApp(interactive=TOK)
     c = cfg(tmp_path, persist_tokens=False)

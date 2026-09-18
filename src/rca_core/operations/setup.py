@@ -43,8 +43,11 @@ def status(cfg: Config) -> dict:
             'Set auth.client_id and auth.tenant_id in team.toml (or ~/.rca/config.toml), or set auth.mode = "pat".',
         ).to_dict()["error"]
     else:
-        user = cached_username(cfg)
-        signed_in = user is not None
+        try:
+            user = cached_username(cfg)
+            signed_in = user is not None
+        except RcaError as e:
+            auth_error = e.to_dict()["error"]
     return {"signed_in": signed_in, "user": user, "auth_mode": cfg.auth_mode, "auth_error": auth_error,
             "org_url": cfg.org_url, "project": cfg.project, "configured": bool(cfg.org_url and cfg.project),
             "fields_ok": bool(read_status(cfg).get("fields_ok")), "current_pi": cfg.current_pi,

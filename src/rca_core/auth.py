@@ -9,6 +9,10 @@ from rca_core.errors import RcaError
 
 ADO_SCOPES = ["499b84ac-1321-427f-aa17-267ca6975798/.default"]
 
+_SIGNIN_FIX = ('Your tenant may block the shared Azure CLI sign-in (Conditional Access). Ask an admin for the '
+               "team app registration (README 'Team admin') and run rca_save_config(client_id=..., tenant_id=...), "
+               'or switch to PAT mode with rca_save_config(auth_mode="pat").')
+
 # (client_id, tenant_id, token_cache_path, persist_tokens) -> app, shared across TokenProvider instances so we
 # don't rebuild the MSAL app (which performs an OpenID-discovery network call) on every call.
 _SESSIONS: dict[tuple[str, str, str, bool], Any] = {}
@@ -53,10 +57,15 @@ def _get_cache(cfg: Config) -> tuple[Any, bool]:
 
 def cached_username(cfg: Config) -> str | None:
     """Signed-in account from the token cache only — no MSAL app, no network. Used by status()."""
-    import msal
-    cache, _ = _get_cache(cfg)
-    accounts = cache.find(msal.TokenCache.CredentialType.ACCOUNT)
-    return accounts[0].get("username") if accounts else None
+    try:
+        import msal
+        cache, _ = _get_cache(cfg)
+        accounts = list(cache.search(msal.TokenCache.CredentialType.ACCOUNT))
+        return accounts[0].get("username") if accounts else None
+    except Exception as exc:
+        raise RcaError("auth_unavailable", "The saved sign-in could not be read.",
+                       "Delete ~/.rca/msal_cache.bin and sign in again.",
+                       debug=f"{type(exc).__name__}: {str(exc)[:200]}")
 
 
 class TokenProvider:
@@ -120,9 +129,18 @@ class TokenProvider:
                 result = self.app.acquire_token_interactive(ADO_SCOPES, prompt="select_account", timeout=180)
             except Exception as exc:  # no browser or no free localhost port: use the device-code flow
                 return self._start_device_flow(interactive_error=f"{type(exc).__name__}: {str(exc)[:200]}")
-            if not result or "access_token" not in result:  # timed out or was cancelled: fall back to device code
+            if not result or "access_token" not in result:
+                result = result or {}
+                error, description = result.get("error"), result.get("error_description", "") or ""
+                timeout_or_cancel = error in ("timeout", "access_denied", "user_cancelled") or "timed out" in description
+                if "error" in result and not timeout_or_cancel:
+                    raise RcaError(
+                        "auth_failed",
+                        f"Microsoft sign-in was refused: {result.get('error_description', result.get('error'))[:300]}",
+                        _SIGNIN_FIX, debug=str(result.get("error")))
+                # timed out or was cancelled: fall back to device code
                 return self._start_device_flow(
-                    interactive_error=str((result or {}).get("error_description") or (result or {}).get("error")
+                    interactive_error=str(result.get("error_description") or result.get("error")
                                           or "interactive sign-in timed out"))
         self._persist()
         return {"signed_in": True, "user": self.signed_in_user()}
@@ -130,8 +148,7 @@ class TokenProvider:
     def _start_device_flow(self, interactive_error: str | None = None) -> dict:
         flow = self.app.initiate_device_flow(scopes=ADO_SCOPES)
         if "user_code" not in flow:
-            raise RcaError("auth_failed", "Could not start device sign-in.",
-                           "Check auth.client_id/tenant_id and that public client flows are enabled on the app registration.")
+            raise RcaError("auth_failed", "Could not start device sign-in.", _SIGNIN_FIX)
         self.flow_path.parent.mkdir(parents=True, exist_ok=True)
         self.flow_path.write_text(json.dumps(flow), encoding="utf-8")
         return {"signed_in": False, "device_code_message": flow["message"],
@@ -146,7 +163,7 @@ class TokenProvider:
         self.flow_path.unlink(missing_ok=True)
         if not result or "access_token" not in result:
             raise RcaError("auth_failed", f"Device sign-in failed: {(result or {}).get('error_description', '')[:300]}",
-                           "Run rca_login() again.")
+                           _SIGNIN_FIX)
         self._persist()
         return {"signed_in": True, "user": self.signed_in_user()}
 

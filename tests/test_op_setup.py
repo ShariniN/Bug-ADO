@@ -34,7 +34,7 @@ def test_status_reads_account_from_cache_without_app(tmp_path, monkeypatch):
     monkeypatch.setattr(auth_mod, "_default_app_factory", boom)
 
     class FakeCache:
-        def find(self, credential_type):
+        def search(self, credential_type):
             return [{"username": "jo@acme.com"}]
 
     c = cfg(tmp_path)
@@ -42,6 +42,20 @@ def test_status_reads_account_from_cache_without_app(tmp_path, monkeypatch):
     monkeypatch.setitem(auth_mod._CACHES, key, (FakeCache(), False))
     out = setup.status(c)
     assert out["user"] == "jo@acme.com" and out["signed_in"] is True
+
+
+def test_status_survives_corrupt_cache(tmp_path, monkeypatch):
+    from rca_core import auth as auth_mod
+
+    class BoomCache:
+        def search(self, credential_type):
+            raise ValueError("corrupt cache")
+
+    c = cfg(tmp_path)
+    key = (str(c.token_cache_path), c.persist_tokens)
+    monkeypatch.setitem(auth_mod._CACHES, key, (BoomCache(), False))
+    out = setup.status(c)
+    assert out["auth_error"]["code"] == "auth_unavailable"
 
 
 def test_status_signed_in_pat_mode(tmp_path):
