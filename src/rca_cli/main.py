@@ -65,6 +65,7 @@ def run(argv: list[str]) -> dict:
         out = fetch(a.bug or None, cfg, client, pr_id=a.pr, cwd=Path(a.cwd) if a.cwd else None)
         if "error" not in out:
             out["update_available"] = newer_tag(cfg.repo_url, current_version())
+            out["tool_version"] = current_version()
         return out
     if a.cmd == "trace":
         return trace(a.bug, cfg, client)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -18,7 +19,8 @@ class GitRepo:
         self.path = Path(path)
 
     def run(self, *args: str, check: bool = True) -> str:
-        proc = subprocess.run(["git", *args], cwd=self.path, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
+        proc = subprocess.run(["git", *args], cwd=self.path, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
         if check and proc.returncode != 0:
             raise RcaError("git_failed", f"git {' '.join(args[:2])} failed: {proc.stderr.strip()[:300]}",
                            f"Run the command manually in {self.path} to see the full error.")
