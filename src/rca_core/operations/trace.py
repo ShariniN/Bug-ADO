@@ -6,12 +6,14 @@ from rca_core.ado_client import AdoClient
 from rca_core.ado_history import AdoHistory
 from rca_core.cache import read_cache, write_cache
 from rca_core.config import Config
+from rca_core.diffparse import removed_old_lines
 from rca_core.errors import RcaError, guarded
 from rca_core.git_forensics import blame_hunks, has_removed_lines
 from rca_core.models import Culprit, Hunk, TraceResult, to_dict
 from rca_core.versions import earliest_version
 
 MAX_CULPRITS = 3
+MAX_BLAME_PATHS = 5
 TRACE_CAP_BYTES = 4000
 
 
@@ -37,18 +39,31 @@ def trace(bug_id: int, cfg: Config, client: AdoClient, history_factory: Callable
                        "Push the branch and open a PR, or run /rca from a clone whose origin is an Azure Repos repository of this project.")
     hist = history_factory(client, repo_id)
     hunks = [Hunk(**h) for f in cached["files_full"] for h in f["hunks"]]
-    counts = blame_hunks(hist, base_sha, hunks)
+
+    by_path: dict[str, list[Hunk]] = {}
+    for h in hunks:
+        by_path.setdefault(h.old_path, []).append(h)
+    ranked_paths = sorted(by_path.items(), key=lambda kv: -sum(len(removed_old_lines(h)) for h in kv[1]))
+    total_paths = len(ranked_paths)
+    blame_hunk_list = [h for _, hs in ranked_paths[:MAX_BLAME_PATHS] for h in hs]
+
+    counts = blame_hunks(hist, base_sha, blame_hunk_list)
     ranked = sorted(counts.items(), key=lambda kv: -kv[1])[:MAX_CULPRITS]
 
-    evidence = [f"Blamed removed lines across {len(hunks)} hunk(s) at base {base_sha[:8]} using Azure DevOps file history; "
+    evidence = [f"Blamed removed lines across {len(blame_hunk_list)} hunk(s) at base {base_sha[:8]} using Azure DevOps file history; "
                 f"{len(counts)} distinct prior commit(s) touched them."]
     notes: list[str] = []
+    if total_paths > MAX_BLAME_PATHS:
+        notes.append(f"Blamed the {MAX_BLAME_PATHS} files with the most removed lines out of {total_paths} changed; others ignored.")
     if not ranked:
         notes.append("No removed lines could be attributed; fix may be pure addition or files are new.")
     if hunks and not has_removed_lines(hunks):
         notes.append("Fix only added lines; culprits are blamed from the 3 lines around each insertion (low confidence).")
     if hist.history_truncated:
         notes.append(f"A culprit fell on the oldest of the {hist.history_top} history entries fetched; the true origin may be older.")
+    if hist.unattributed:
+        notes.append(f"{hist.unattributed} removed line(s) were too generic or duplicated (braces, blank-ish, repeated text) "
+                     "to attribute and were ignored.")
 
     culprits: list[Culprit] = []
     for sha, lines in ranked:

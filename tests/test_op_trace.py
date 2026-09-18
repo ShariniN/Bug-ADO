@@ -1,7 +1,7 @@
 from rca_core.ado_client import AdoClient
 from rca_core.cache import write_cache
 from rca_core.operations.fetch import fetch
-from rca_core.operations.trace import trace
+from rca_core.operations.trace import MAX_BLAME_PATHS, trace
 from tests.ado_routes import commit_route, history_routes
 from tests.conftest import FakeTransport
 from tests.test_ado_client import ORG, PROJ, wi
@@ -80,3 +80,20 @@ def test_trace_without_repo_id_is_history_unavailable(tmp_path):
 
 def test_trace_without_fetch_errors(tmp_path):
     assert trace(999, make_cfg(tmp_path), AdoClient(ORG, PROJ, FakeTransport({})))["error"]["code"] == "fetch_first"
+
+
+def test_trace_caps_blamed_paths_to_the_top_5(tmp_path):
+    cfg = make_cfg(tmp_path)
+    paths = [f"file{i}.py" for i in range(7)]
+    files_full = [{"path": p, "old_path": p, "change": "modify",
+                   "hunks": [{"old_path": p, "new_path": p, "old_start": 99, "old_len": 1,
+                              "new_start": 99, "new_len": 1, "text": "-ghost"}]}
+                  for p in paths]
+    write_cache(cfg, 100, {"files_full": files_full, "repo_id": R, "base_sha": BASE, "repo": "x"})
+    routes = {}
+    for p in paths:
+        routes.update(history_routes(R, p, VERSIONS))
+    client = AdoClient(ORG, PROJ, FakeTransport(routes))
+    out = trace(100, cfg, client)
+    assert "error" not in out, out
+    assert any(f"Blamed the {MAX_BLAME_PATHS} files" in n for n in out["confidence_notes"])

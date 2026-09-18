@@ -37,17 +37,17 @@ def bug_from_work_item(w: dict) -> BugInfo:
     )
 
 
-def _pr_diff(pr: PullRequestInfo, hist: AdoHistory, client: AdoClient) -> tuple[str, str, str]:
-    """(base, head, diff_text) for a PR, using the merge commit when the source commit no longer exists."""
+def _pr_diff(pr: PullRequestInfo, hist: AdoHistory, client: AdoClient) -> tuple[str, str, str, bool]:
+    """(base, head, diff_text, paths_truncated) for a PR, using the merge commit when the source commit no longer exists."""
     head = pr.source_sha
     if head and hist.commit_exists(head) and pr.target_sha:
         base = hist.merge_base(pr.target_sha, head)
         if base:
-            return base, head, hist.diff(base, head)
+            return base, head, hist.diff(base, head), hist.paths_truncated
     if pr.merge_sha:
         info = client.get_commit(pr.repo_id, pr.merge_sha)
         if info["parents"]:
-            return info["parents"][0], pr.merge_sha, hist.diff(info["parents"][0], pr.merge_sha)
+            return info["parents"][0], pr.merge_sha, hist.diff(info["parents"][0], pr.merge_sha), hist.paths_truncated
     raise RcaError("history_unavailable", f"Azure DevOps has neither the source nor the merge commit of PR {pr.id}.",
                    "Check the PR still exists and was pushed to this project; otherwise run /rca from your fix branch.")
 
@@ -88,7 +88,7 @@ def fetch(bug: str | int | None, cfg: Config, client: AdoClient, pr_id: int | No
 
     if pr is not None:
         hist = history_factory(client, pr.repo_id)
-        base_sha, head_sha, diff_text = _pr_diff(pr, hist, client)
+        base_sha, head_sha, diff_text, paths_truncated = _pr_diff(pr, hist, client)
         source, repo_name, repo_id = "pr", pr.repo_name, pr.repo_id
     else:
         if root is None:
@@ -108,9 +108,11 @@ def fetch(bug: str | int | None, cfg: Config, client: AdoClient, pr_id: int | No
         base_sha = g.merge_base(target, head_sha)
         diff_text = g.diff(base_sha, head_sha)
         source, repo_name, repo_id = "branch", root.name, _origin_repo_id(g, client)
+        paths_truncated = False
 
     files = parse_unified_diff(diff_text)
     capped, truncated = cap_hunks(files, FETCH_CAP_BYTES)
+    truncated = truncated or paths_truncated
     full = {"bug_id": bug_id, "bug": to_dict(info), "pr": to_dict(pr) if pr else None, "source": source,
             "repo": repo_name, "repo_id": repo_id, "resolved": resolved, "base_sha": base_sha, "head_sha": head_sha,
             "files_full": to_dict(files)}

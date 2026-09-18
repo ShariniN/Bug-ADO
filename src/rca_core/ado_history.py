@@ -2,15 +2,21 @@ from __future__ import annotations
 
 import difflib
 import re
+from collections import Counter
 
 from rca_core.ado_client import AdoClient
 from rca_core.errors import RcaError
 
 BINARY_EXT = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".dll", ".exe", ".pdf", ".zip", ".woff", ".woff2", ".ttf", ".snk", ".pfx"}
+_TRIVIAL = re.compile(r"^[{}()\[\];,]*$")
 
 
 def _key(line: str) -> str:
     return "".join(line.split())
+
+
+def _blameable(key: str) -> bool:
+    return len(key) >= 4 and not _TRIVIAL.match(key)
 
 
 class AdoHistory:
@@ -21,6 +27,9 @@ class AdoHistory:
         self._lines: dict[tuple[str, str], list[str] | None] = {}
         self._hist: dict[tuple[str, str], list[str]] = {}
         self.history_truncated = False
+        self.paths_truncated = False
+        self.unattributed = 0
+        self._refs: list[dict] | None = None
 
     def file_lines(self, sha: str, path: str) -> list[str] | None:
         k = (sha, path)
@@ -29,9 +38,13 @@ class AdoHistory:
             self._lines[k] = None if text is None else text.splitlines()
         return self._lines[k]
 
-    def diff(self, base: str, head: str) -> str:
+    def diff(self, base: str, head: str, max_paths: int = 50) -> str:
         out: list[str] = []
-        for ch in self.client.changed_paths(self.repo_id, base, head):
+        changes = self.client.changed_paths(self.repo_id, base, head)
+        if len(changes) > max_paths:
+            changes = changes[:max_paths]
+            self.paths_truncated = True
+        for ch in changes:
             if any(ch["path"].lower().endswith(e) for e in BINARY_EXT):
                 continue
             old = None if ch["change"] == "add" else self.file_lines(base, ch["old_path"])
@@ -56,7 +69,9 @@ class AdoHistory:
         hist = self.path_history(path, sha) if base is not None else []
         if not base or not hist:
             return {}
-        keysets: dict[str, set[str]] = {}
+        counts = Counter(_key(l) for l in base)
+        # content at hist[0] equals content at sha (base), so no fetch needed to seed it
+        keysets: dict[str, set[str]] = {hist[0]: {k for k in counts}}
 
         def keys(commit: str) -> set[str]:
             if commit not in keysets:
@@ -67,7 +82,10 @@ class AdoHistory:
         result: dict[int, str] = {}
         for n in range(max(1, start), min(end, len(base)) + 1):
             key = _key(base[n - 1])
-            if not key or key not in keys(hist[0]):
+            if not key:
+                continue
+            if not _blameable(key) or counts[key] != 1:
+                self.unattributed += 1
                 continue
             lo, hi = 0, len(hist) - 1  # invariant: key present at hist[lo]
             while lo < hi:
@@ -99,8 +117,10 @@ class AdoHistory:
         return mbs[0] if mbs else None
 
     def branches_containing(self, sha: str, pattern: str) -> list[str]:
+        if self._refs is None:
+            self._refs = self.client.get_refs(self.repo_id, "heads/")
         names: list[str] = []
-        for ref in self.client.get_refs(self.repo_id, "heads/"):
+        for ref in self._refs:
             if not re.search(pattern, ref["name"]):
                 continue
             if ref["sha"] == sha or sha in self.client.merge_bases(self.repo_id, sha, ref["sha"]):

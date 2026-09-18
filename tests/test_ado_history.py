@@ -60,3 +60,23 @@ def test_commit_info_and_exists():
     h = hist(commit_route(R, "c2", author="Jane", subject="make b nullable"))
     assert h.commit_info("c2") == {"sha": "c2", "author": "Jane", "date": "2024-03-01", "subject": "make b nullable"}
     assert h.commit_exists("c2") is True
+
+
+BRACES = [
+    ("c2", "class A\n{\n    int F()\n    {\n        if (a < 0)\n        {\n            return 0;\n        }\n        return 1;\n    }\n}\n"),
+    ("c1", "class A\n{\n    int F()\n    {\n        return 1;\n    }\n}\n"),
+]
+
+
+def test_blame_skips_braces_and_duplicates_and_counts_them():
+    routes = history_routes(R, "A.cs", BRACES)
+    h = AdoHistory(AdoClient("https://dev.azure.com/acme", "Acme", FakeTransport(routes)), R)
+    assert h.blame_lines("c2", "A.cs", 5, 8) == {5: "c2", 7: "c2"}
+    assert h.unattributed == 2  # the two brace lines
+
+
+def test_refs_fetched_once_per_instance():
+    h = hist()
+    h.branches_containing("c2", r"release/(\d+\.\d+)")
+    h.branches_containing("c2", r"release/(\d+\.\d+)")
+    assert sum(1 for c in h.client.t.calls if "/refs?" in c[1]) == 1

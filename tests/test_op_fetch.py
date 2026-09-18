@@ -131,6 +131,18 @@ def test_fetch_local_branch_on_default_branch_is_no_fix_source(git_repo, tmp_pat
     assert out["error"]["code"] == "no_fix_source"
 
 
+def test_fetch_truncates_when_more_than_50_paths_changed(tmp_path):
+    paths = [f"file{i}.py" for i in range(51)]
+    r = routes_pr_ok()
+    r.update(diff_route(R, BASE, HEAD, [(p, "edit", None) for p in paths]))
+    for p in paths:
+        r[("TEXT", f"items?path={p}&versionDescriptor.version={BASE}")] = OLD
+        r[("TEXT", f"items?path={p}&versionDescriptor.version={HEAD}")] = NEW
+    out = fetch(100, make_cfg(tmp_path), AdoClient(ORG, PROJ, FakeTransport(r)))
+    assert "error" not in out, out
+    assert out["truncated"] is True
+
+
 def test_cache_keeps_uncapped_hunks_when_output_is_capped(tmp_path, monkeypatch):
     import rca_core.operations.fetch as fetch_mod
     monkeypatch.setattr(fetch_mod, "FETCH_CAP_BYTES", 5)
