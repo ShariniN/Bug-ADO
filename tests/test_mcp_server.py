@@ -5,14 +5,18 @@ import rca_mcp.server as srv
 
 def test_tools_are_registered():
     names = {t.name for t in asyncio.run(srv.mcp.list_tools())}
-    assert names == {"rca_fetch", "rca_trace", "rca_classify", "rca_fields", "rca_publish"}
+    assert names == {
+        "rca_status", "rca_login", "rca_setup_options", "rca_save_config",
+        "rca_fetch", "rca_trace", "rca_classify", "rca_fields", "rca_publish",
+    }
 
 
-def test_rca_fetch_without_pat_returns_error(monkeypatch, tmp_path):
-    monkeypatch.delenv("ADO_PAT", raising=False)
-    monkeypatch.setattr(srv, "USER_CONFIG", tmp_path / "none.toml")
-    out = srv.rca_fetch(123)
-    assert out["error"]["code"] == "no_pat"
+def test_rca_fetch_auth_not_configured(monkeypatch, tmp_path):
+    cfg_path = tmp_path / "cfg.toml"
+    cfg_path.write_text('[auth]\nmode = "browser"\n', encoding="utf-8")
+    monkeypatch.setattr(srv, "USER_CONFIG", cfg_path)
+    out = srv.rca_fetch("1")
+    assert out["error"]["code"] == "auth_not_configured"
 
 
 def test_rca_publish_defaults_to_dry_run(monkeypatch, tmp_path):
@@ -22,8 +26,10 @@ def test_rca_publish_defaults_to_dry_run(monkeypatch, tmp_path):
         seen["dry_run"] = dry_run
         return {"dry_run": dry_run, "patch": {}}
 
+    cfg_path = tmp_path / "cfg.toml"
+    cfg_path.write_text('[auth]\nmode = "pat"\n', encoding="utf-8")
     monkeypatch.setenv("ADO_PAT", "x")
-    monkeypatch.setattr(srv, "USER_CONFIG", tmp_path / "none.toml")
+    monkeypatch.setattr(srv, "USER_CONFIG", cfg_path)
     monkeypatch.setattr(srv, "publish", fake_publish)
     assert srv.rca_publish(1, {"root_cause": "r"})["dry_run"] is True
     assert seen["dry_run"] is True
