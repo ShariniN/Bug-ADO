@@ -18,8 +18,30 @@ def factory(app):
 
 
 def test_status_unconfigured_and_signed_out(tmp_path):
-    out = setup.status(cfg(tmp_path), auth_factory=factory(FakeMsalApp()))
+    # No app is built for status() any more (it reads the token cache directly), so this is signed-out
+    # simply because cfg.home (== tmp_path) has no cache file yet.
+    out = setup.status(cfg(tmp_path))
     assert out["signed_in"] is False and out["configured"] is False and out["user"] is None
+    assert out["auth_error"] is None
+
+
+def test_status_reads_account_from_cache_without_app(tmp_path, monkeypatch):
+    from rca_core import auth as auth_mod
+
+    def boom(cfg, cache):
+        raise AssertionError("status() must not build an MSAL app")
+
+    monkeypatch.setattr(auth_mod, "_default_app_factory", boom)
+
+    class FakeCache:
+        def find(self, credential_type):
+            return [{"username": "jo@acme.com"}]
+
+    c = cfg(tmp_path)
+    key = (str(c.token_cache_path), c.persist_tokens)
+    monkeypatch.setitem(auth_mod._CACHES, key, (FakeCache(), False))
+    out = setup.status(c)
+    assert out["user"] == "jo@acme.com" and out["signed_in"] is True
 
 
 def test_status_signed_in_pat_mode(tmp_path):

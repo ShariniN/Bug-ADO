@@ -1,6 +1,7 @@
 import asyncio
 
 import rca_mcp.server as srv
+from tests.fake_msal import FakeMsalApp
 
 
 def test_tools_are_registered():
@@ -13,7 +14,12 @@ def test_tools_are_registered():
 
 def test_rca_fetch_not_signed_in(monkeypatch, tmp_path):
     # Team defaults now ship a ready-to-use client id/tenant id, so an unconfigured browser-mode
-    # setup fails at "not signed in yet" (no account cached, no network call needed), not auth_not_configured.
+    # setup fails at "not signed in yet" (no account cached), not auth_not_configured. rca_fetch actually
+    # builds a client (unlike status()), so it does construct an MSAL app -- fake it out to avoid network,
+    # and clear the process-level session/cache memos so this test doesn't reuse another test's real app.
+    monkeypatch.setattr("rca_core.auth._default_app_factory", lambda cfg, cache: FakeMsalApp())
+    monkeypatch.setattr("rca_core.auth._SESSIONS", {})
+    monkeypatch.setattr("rca_core.auth._CACHES", {})
     cfg_path = tmp_path / "cfg.toml"
     cfg_path.write_text('[auth]\nmode = "browser"\n', encoding="utf-8")
     monkeypatch.setattr(srv, "USER_CONFIG", cfg_path)

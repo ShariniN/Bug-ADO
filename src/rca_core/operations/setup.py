@@ -5,7 +5,7 @@ import tomllib
 from typing import Callable
 
 from rca_core.ado_client import AdoClient
-from rca_core.auth import TokenProvider
+from rca_core.auth import TokenProvider, cached_username
 from rca_core.config import Config, merge
 from rca_core.errors import RcaError, guarded
 from rca_core.tomlwrite import dumps
@@ -22,17 +22,21 @@ def _status_file(cfg: Config) -> dict:
 
 
 @guarded
-def status(cfg: Config, auth_factory: Callable[[Config], TokenProvider] = TokenProvider) -> dict:
+def status(cfg: Config) -> dict:
+    """Never constructs a TokenProvider (which would build an MSAL app and hit the network for OpenID discovery):
+    reads the signed-in account straight from the token cache."""
     user, signed_in, auth_error = None, False, None
     if cfg.auth_mode == "pat":
         signed_in = bool(cfg._env.get(cfg.pat_env))
         user = f"PAT ({cfg.pat_env})" if signed_in else None
+    elif not cfg.client_id or not cfg.tenant_id:
+        auth_error = RcaError(
+            "auth_not_configured", "Browser sign-in needs the team's Entra app registration.",
+            'Set auth.client_id and auth.tenant_id in team.toml (or ~/.rca/config.toml), or set auth.mode = "pat".',
+        ).to_dict()["error"]
     else:
-        try:
-            user = auth_factory(cfg).signed_in_user()
-            signed_in = user is not None
-        except RcaError as e:
-            auth_error = e.to_dict()["error"]
+        user = cached_username(cfg)
+        signed_in = user is not None
     return {"signed_in": signed_in, "user": user, "auth_mode": cfg.auth_mode, "auth_error": auth_error,
             "org_url": cfg.org_url, "project": cfg.project, "configured": bool(cfg.org_url and cfg.project),
             "fields_ok": bool(_status_file(cfg).get("fields_ok")), "current_pi": cfg.current_pi,

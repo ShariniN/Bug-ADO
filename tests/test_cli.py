@@ -19,13 +19,16 @@ def test_fetch_without_pat_reports_no_pat(monkeypatch, tmp_path, capsys):
 
 
 def test_status_runs_without_network(monkeypatch, tmp_path, capsys):
-    cfg_path = tmp_path / "cfg.toml"
-    cfg_path.write_text('[auth]\nmode = "browser"\n', encoding="utf-8")
-    monkeypatch.setattr(cli, "USER_CONFIG", cfg_path)
+    def boom(cfg, cache):
+        raise AssertionError("network")
+
+    monkeypatch.setattr("rca_core.auth._default_app_factory", boom)
+    # No user config file: team defaults apply (browser mode, ready-to-use client id/tenant id), and
+    # USER_CONFIG's parent doubles as cfg.home so the (empty) token cache lives under tmp_path.
+    monkeypatch.setattr(cli, "USER_CONFIG", tmp_path / "none.toml")
     assert cli.main(["status"]) == 0
     out = json.loads(capsys.readouterr().out)
-    # Team defaults now ship a ready-to-use client id/tenant id, so an unconfigured browser-mode
-    # setup is just "not signed in yet" (no network call needed), not an auth_error.
+    # status() reads the token cache directly and never builds an MSAL app, so this never touches the network.
     assert out["signed_in"] is False
     assert out["auth_error"] is None
 

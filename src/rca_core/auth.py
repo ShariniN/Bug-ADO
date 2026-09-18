@@ -9,9 +9,13 @@ from rca_core.errors import RcaError
 
 ADO_SCOPES = ["499b84ac-1321-427f-aa17-267ca6975798/.default"]
 
-# (client_id, tenant_id, token_cache_path, persist_tokens) -> (cache, manual_persist, app), shared across
-# TokenProvider instances so we don't rebuild the MSAL app (and re-touch the encrypted cache file) on every call.
-_SESSIONS: dict[tuple[str, str, str, bool], tuple[Any, bool, Any]] = {}
+# (client_id, tenant_id, token_cache_path, persist_tokens) -> app, shared across TokenProvider instances so we
+# don't rebuild the MSAL app (which performs an OpenID-discovery network call) on every call.
+_SESSIONS: dict[tuple[str, str, str, bool], Any] = {}
+
+# (token_cache_path, persist_tokens) -> (cache, manual_persist), shared independently of the app so reading the
+# cache (e.g. status()) never needs to build an app or touch the network.
+_CACHES: dict[tuple[str, bool], tuple[Any, bool]] = {}
 
 
 def _build_cache(path: Path, persist: bool = True) -> tuple[Any, bool]:
@@ -39,14 +43,33 @@ def _default_app_factory(cfg: Config, cache: Any) -> Any:
         cfg.client_id, authority=f"https://login.microsoftonline.com/{cfg.tenant_id}", token_cache=cache)
 
 
+def _get_cache(cfg: Config) -> tuple[Any, bool]:
+    """Return (token_cache, needs_manual_persist), memoized per (path, persist_tokens)."""
+    key = (str(cfg.token_cache_path), cfg.persist_tokens)
+    if key not in _CACHES:
+        _CACHES[key] = _build_cache(cfg.token_cache_path, cfg.persist_tokens)
+    return _CACHES[key]
+
+
+def cached_username(cfg: Config) -> str | None:
+    """Signed-in account from the token cache only — no MSAL app, no network. Used by status()."""
+    import msal
+    cache, _ = _get_cache(cfg)
+    accounts = cache.find(msal.TokenCache.CredentialType.ACCOUNT)
+    return accounts[0].get("username") if accounts else None
+
+
 class TokenProvider:
     """Entra ID sign-in for Azure DevOps. Never prints; every message is returned to the caller."""
 
-    def __init__(self, cfg: Config, app_factory: Callable[[Config, Any], Any] = _default_app_factory, cache: Any = None) -> None:
+    def __init__(self, cfg: Config, app_factory: Callable[[Config, Any], Any] | None = None, cache: Any = None) -> None:
         if not cfg.client_id or not cfg.tenant_id:
             raise RcaError("auth_not_configured", "Browser sign-in needs the team's Entra app registration.",
                            'Set auth.client_id and auth.tenant_id in team.toml (or ~/.rca/config.toml), or set auth.mode = "pat".')
         self.cfg = cfg
+        # Resolved by name at call time (not bound as a default value) so tests can monkeypatch
+        # rca_core.auth._default_app_factory even when the caller doesn't pass app_factory explicitly.
+        app_factory = app_factory or _default_app_factory
 
         def build_app(c: Any) -> Any:
             try:
@@ -58,11 +81,11 @@ class TokenProvider:
                                "Check network or VPN access to login.microsoftonline.com and retry.")
 
         if cache is None:
+            self.cache, self._manual_persist = _get_cache(cfg)
             key = (cfg.client_id, cfg.tenant_id, str(cfg.token_cache_path), cfg.persist_tokens)
             if key not in _SESSIONS:
-                built_cache, manual_persist = _build_cache(cfg.token_cache_path, cfg.persist_tokens)
-                _SESSIONS[key] = (built_cache, manual_persist, build_app(built_cache))
-            self.cache, self._manual_persist, self.app = _SESSIONS[key]
+                _SESSIONS[key] = build_app(self.cache)
+            self.app = _SESSIONS[key]
         else:
             self.cache, self._manual_persist = cache, False
             self.app = build_app(self.cache)
