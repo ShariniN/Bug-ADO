@@ -17,7 +17,7 @@ class FakeMsalApp:
         self.calls.append("silent")
         return self.silent
 
-    def acquire_token_interactive(self, scopes, prompt=None):
+    def acquire_token_interactive(self, scopes, prompt=None, timeout=None):
         self.calls.append("interactive")
         if self.raise_interactive:
             raise RuntimeError("no browser")

@@ -61,6 +61,23 @@ def test_missing_app_registration_is_auth_not_configured(tmp_path):
     assert e.value.code == "auth_not_configured"
 
 
+def test_app_factory_failure_is_auth_unavailable(tmp_path):
+    def bad_factory(c, cache):
+        raise RuntimeError("dns")
+
+    with pytest.raises(RcaError) as e:
+        TokenProvider(cfg(tmp_path), app_factory=bad_factory, cache=object())
+    assert e.value.code == "auth_unavailable"
+
+
+def test_interactive_timeout_falls_back_to_device_flow(tmp_path):
+    app = FakeMsalApp(interactive={"error": "timeout"})
+    tp = provider(tmp_path, app)
+    result = tp.login()
+    assert result["user_code"] == "ABCD-EFGH"
+    assert "timeout" in result["interactive_error"]
+
+
 def test_transport_sends_bearer_from_provider():
     tr = RequestsTransport(token_provider=lambda: "tok")
     seen = {}

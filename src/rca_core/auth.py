@@ -9,6 +9,10 @@ from rca_core.errors import RcaError
 
 ADO_SCOPES = ["499b84ac-1321-427f-aa17-267ca6975798/.default"]
 
+# (client_id, tenant_id, token_cache_path) -> (cache, manual_persist, app), shared across TokenProvider instances
+# so we don't rebuild the MSAL app (and re-touch the encrypted cache file) on every call.
+_SESSIONS: dict[tuple[str, str, str], tuple[Any, bool, Any]] = {}
+
 
 def _build_cache(path: Path) -> tuple[Any, bool]:
     """Return (token_cache, needs_manual_persist). Encrypted persistence (DPAPI on Windows) when available."""
@@ -38,11 +42,25 @@ class TokenProvider:
             raise RcaError("auth_not_configured", "Browser sign-in needs the team's Entra app registration.",
                            'Set auth.client_id and auth.tenant_id in team.toml (or ~/.rca/config.toml), or set auth.mode = "pat".')
         self.cfg = cfg
+
+        def build_app(c: Any) -> Any:
+            try:
+                return app_factory(cfg, c)
+            except RcaError:
+                raise
+            except Exception as exc:
+                raise RcaError("auth_unavailable", f"Could not reach Microsoft sign-in: {type(exc).__name__}: {str(exc)[:200]}",
+                               "Check network or VPN access to login.microsoftonline.com and retry.")
+
         if cache is None:
-            self.cache, self._manual_persist = _build_cache(cfg.token_cache_path)
+            key = (cfg.client_id, cfg.tenant_id, str(cfg.token_cache_path))
+            if key not in _SESSIONS:
+                built_cache, manual_persist = _build_cache(cfg.token_cache_path)
+                _SESSIONS[key] = (built_cache, manual_persist, build_app(built_cache))
+            self.cache, self._manual_persist, self.app = _SESSIONS[key]
         else:
             self.cache, self._manual_persist = cache, False
-        self.app = app_factory(cfg, self.cache)
+            self.app = build_app(self.cache)
         self.flow_path = cfg.home / "device_flow.json"
 
     def _account(self) -> dict | None:
@@ -71,12 +89,13 @@ class TokenProvider:
         result = self._silent()
         if not (result and "access_token" in result):
             try:
-                result = self.app.acquire_token_interactive(ADO_SCOPES, prompt="select_account")
+                result = self.app.acquire_token_interactive(ADO_SCOPES, prompt="select_account", timeout=180)
             except Exception as exc:  # no browser or no free localhost port: use the device-code flow
                 return self._start_device_flow(interactive_error=f"{type(exc).__name__}: {str(exc)[:200]}")
-        if not result or "access_token" not in result:
-            raise RcaError("auth_failed", f"Sign-in failed: {(result or {}).get('error_description', 'unknown error')[:300]}",
-                           'Retry rca_login; if it keeps failing, set auth.mode = "pat".')
+            if not result or "access_token" not in result:  # timed out or was cancelled: fall back to device code
+                return self._start_device_flow(
+                    interactive_error=str((result or {}).get("error_description") or (result or {}).get("error")
+                                          or "interactive sign-in timed out"))
         self._persist()
         return {"signed_in": True, "user": self.signed_in_user()}
 
