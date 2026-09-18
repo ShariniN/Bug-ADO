@@ -48,9 +48,11 @@ def status(cfg: Config) -> dict:
             signed_in = user is not None
         except RcaError as e:
             auth_error = e.to_dict()["error"]
+    status = read_status(cfg)
+    bug_type = cfg.bug_type or (status.get("bug_type") if status.get("bug_type_for") == f"{cfg.org_url}|{cfg.project}" else None)
     return {"signed_in": signed_in, "user": user, "auth_mode": cfg.auth_mode, "auth_error": auth_error,
             "org_url": cfg.org_url, "project": cfg.project, "configured": bool(cfg.org_url and cfg.project),
-            "fields_ok": bool(read_status(cfg).get("fields_ok")), "current_pi": cfg.current_pi,
+            "fields_ok": bool(status.get("fields_ok")), "current_pi": cfg.current_pi, "bug_type": bug_type,
             "tool_version": current_version()}
 
 
@@ -94,4 +96,6 @@ def save_config(cfg: Config, org_url: str | None = None, project: str | None = N
     data = merge(data, patch)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(dumps(data), encoding="utf-8")
+    if org_url is not None or project is not None:
+        write_status(cfg, bug_type=None, bug_type_for=None, fields_ok=False)
     return {"path": str(path), "saved": patch}

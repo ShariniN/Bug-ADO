@@ -8,11 +8,12 @@ from rca_core.operations.setup import read_status, write_status
 def detect_bug_type(cfg: Config, client: AdoClient) -> str:
     if cfg.bug_type:
         return cfg.bug_type
-    cached = read_status(cfg).get("bug_type")
-    if cached:
-        return cached
+    key = f"{cfg.org_url}|{cfg.project}"
+    status = read_status(cfg)
+    if status.get("bug_type") and status.get("bug_type_for") == key:
+        return status["bug_type"]
     names = client.list_work_item_types()
     lower = {n.lower(): n for n in names}
     chosen = lower.get("bug") or lower.get("issue") or next((n for n in names if "bug" in n.lower()), "Bug")
-    write_status(cfg, bug_type=chosen)
+    write_status(cfg, bug_type=chosen, bug_type_for=key)
     return chosen

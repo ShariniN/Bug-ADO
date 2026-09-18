@@ -50,8 +50,8 @@ class RequestsTransport:
 
     @staticmethod
     def _kind(url: str) -> str:
-        for needle, kind in (("/workitems", "work item"), ("/pullrequests", "pull request"), ("/repositories/", "repository"),
-                             ("/projects", "project"), ("/accounts", "organization list")):
+        for needle, kind in (("/workitemtypes", "work item type"), ("/workitems", "work item"), ("/pullrequests", "pull request"),
+                             ("/repositories/", "repository"), ("/projects", "project"), ("/accounts", "organization list")):
             if needle in url.lower():
                 return kind
         return "resource"

@@ -66,7 +66,7 @@ Config: team defaults in `src/rca_core/defaults/team.toml`; personal overrides i
 `auth.persist_tokens` (default `true`) keeps the sign-in token cache on disk between runs; set it to `false`
 to keep sign-in in memory only (sign in again each Claude Code session). `ado.bug_type` pins the work item
 type RCA fields are read from/written to (e.g. `"Bug"`, `"Issue"`, `"Defect"`); left blank, it's detected
-once per project and cached.
+once per org/project and cached.
 Cache: `~/.rca/cache/<bug>.json`. The PAT is only ever read from its environment variable. In browser mode
 the sign-in token cache is stored at `~/.rca/msal_cache.bin`, encrypted with Windows DPAPI (or the OS
 keyring) when `msal-extensions` can use it, otherwise as a plain file; delete that file to sign out.

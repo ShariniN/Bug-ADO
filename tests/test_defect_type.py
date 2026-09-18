@@ -1,6 +1,7 @@
 from rca_core.ado_client import AdoClient
 from rca_core.config import load_config
 from rca_core.defect_type import detect_bug_type
+from rca_core.operations.setup import write_status
 from tests.ado_routes import types_route
 from tests.conftest import FakeTransport
 
@@ -45,5 +46,16 @@ def test_second_call_served_from_status_json(tmp_path):
     cl = AdoClient(ORG, PROJ, t)
     assert detect_bug_type(c, cl) == "Issue"
     assert detect_bug_type(c, cl) == "Issue"
+    type_calls = [call for call in t.calls if call[0] == "GET" and "workitemtypes?" in call[1]]
+    assert len(type_calls) == 1
+
+
+def test_cached_value_for_a_different_project_is_ignored(tmp_path):
+    c = cfg(tmp_path)
+    c.org_url, c.project = ORG, PROJ
+    write_status(c, bug_type="Issue", bug_type_for=f"{ORG}|OtherProject")
+    t = FakeTransport(types_route(["Epic", "Bug"]))
+    cl = AdoClient(ORG, PROJ, t)
+    assert detect_bug_type(c, cl) == "Bug"
     type_calls = [call for call in t.calls if call[0] == "GET" and "workitemtypes?" in call[1]]
     assert len(type_calls) == 1

@@ -97,3 +97,29 @@ def test_pat_mode_login_without_env_var_is_no_pat(tmp_path):
     c._env = {}
     out = setup.login(c)
     assert out["error"]["code"] == "no_pat"
+
+
+def _cfg_with_org_project(tmp_path):
+    return cfg(tmp_path, '[ado]\norg_url = "https://dev.azure.com/acme"\nproject = "Acme"\n'
+                          '[auth]\nmode = "browser"\nclient_id = "cid"\ntenant_id = "tid"\n')
+
+
+def test_save_config_project_change_clears_bug_type(tmp_path):
+    from rca_core.operations.setup import read_status, write_status
+
+    c = _cfg_with_org_project(tmp_path)
+    write_status(c, bug_type="Issue", bug_type_for=f"{c.org_url}|{c.project}", fields_ok=True)
+    setup.save_config(c, project="Other")
+    status = read_status(c)
+    assert status.get("bug_type") is None
+    assert status.get("bug_type_for") is None
+    assert status.get("fields_ok") is False
+
+
+def test_status_reports_cached_bug_type_for_current_project(tmp_path):
+    from rca_core.operations.setup import write_status
+
+    c = _cfg_with_org_project(tmp_path)
+    write_status(c, bug_type="Issue", bug_type_for=f"{c.org_url}|{c.project}")
+    out = setup.status(c)
+    assert out["bug_type"] == "Issue"
