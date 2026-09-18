@@ -118,7 +118,7 @@ def test_history_endpoints():
     t = FakeTransport({**history_routes("repo-1", "src/pay.py", [("c3", "a\nb\n"), ("c2", "a\n"), ("c1", None)],
                                         refs=[("release/9.5", "r1"), ("main", "m")], merge_bases={("c2", "r1"): ["c1"]}),
                        **commit_route("repo-1", "c2", parents=["c1"]),
-                       **diff_route("repo-1", "c1", "c3", [("src/pay.py", "edit", None), ("new.txt", "add", None), ("old.txt", "delete", None), ("b.txt", "rename", "a.txt")])})
+                       **diff_route("repo-1", "c1", "c3", [("src/pay.py", "edit", None), ("new.txt", "add", None), ("old.txt", "delete", None), ("b.txt", "rename", "a.txt"), ("src", "add", None, True)])})
     c = AdoClient("https://dev.azure.com/acme", "Acme", t)
     assert c.path_history("repo-1", "src/pay.py", "c3") == ["c3", "c2", "c1"]
     assert c.get_item_text("repo-1", "src/pay.py", "c2") == "a\n"
@@ -140,7 +140,9 @@ def test_prs_by_branch_and_pr_repo_id():
             {"pullRequestId": 5, "status": "active", "repository": {"id": "repo-1", "name": "Acme.Web"}},
             {"pullRequestId": 9, "status": "completed", "repository": {"id": "repo-1", "name": "Acme.Web"}}]},
         ("GET", "/_apis/git/pullrequests/9?"): {"pullRequestId": 9, "repository": {"id": "repo-1"}},
+        ("GET", "sourceRefName=refs/heads/bug%20fix/1"): {"value": []},
     })
     c = AdoClient("https://dev.azure.com/acme", "Acme", t)
     assert [p["id"] for p in c.find_prs_by_source_branch("bugfix/1")] == [9, 5]
     assert c.pr_repo_id(9) == "repo-1"
+    assert c.find_prs_by_source_branch("bug fix/1") == []

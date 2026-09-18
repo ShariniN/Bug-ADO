@@ -34,7 +34,13 @@ def commit_route(repo_id, sha, author="Jo", date="2024-03-01T10:00:00Z", subject
 
 
 def diff_route(repo_id, base, head, changes):
-    """changes: [(path, changeType, old_path|None)]"""
-    return {("GET", f"/repositories/{repo_id}/diffs/commits?baseVersion={base}"): {"changes": [
-        {"item": {"path": "/" + p, "gitObjectType": "blob"}, "changeType": ct, **({"sourceServerItem": "/" + op} if op else {})}
-        for p, ct, op in changes]}}
+    """changes: [(path, changeType, old_path|None)] or [(path, changeType, old_path|None, is_folder)]"""
+    items = []
+    for c in changes:
+        p, ct, op = c[:3]
+        folder = len(c) > 3 and c[3]
+        item = {"path": "/" + p, "gitObjectType": "tree" if folder else "blob"}
+        if folder:
+            item["isFolder"] = True
+        items.append({"item": item, "changeType": ct, **({"sourceServerItem": "/" + op} if op else {})})
+    return {("GET", f"/repositories/{repo_id}/diffs/commits?baseVersion={base}"): {"changes": items}}

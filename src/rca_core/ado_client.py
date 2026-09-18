@@ -240,7 +240,7 @@ class AdoClient:
         return out
 
     def find_prs_by_source_branch(self, branch: str) -> list[dict]:
-        url = (f"{self.org}/{self.project}/_apis/git/pullrequests?searchCriteria.sourceRefName=refs/heads/{branch}"
+        url = (f"{self.org}/{self.project}/_apis/git/pullrequests?searchCriteria.sourceRefName=refs/heads/{quote(branch, safe='/')}"
                f"&searchCriteria.status=all&{API}")
         prs = self.t.request("GET", url).get("value", [])
         return sorted(({"id": int(p["pullRequestId"]), "repo_id": p["repository"]["id"],
