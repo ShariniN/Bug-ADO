@@ -48,6 +48,7 @@ def test_login_falls_back_to_device_flow_in_two_steps(tmp_path):
     tp = provider(tmp_path, app)
     first = tp.login()
     assert first["signed_in"] is False and first["user_code"] == "ABCD-EFGH" and "devicelogin" in first["verification_uri"]
+    assert "no browser" in first["interactive_error"]
     assert (tp.cfg.home / "device_flow.json").exists()
     app.accounts = ACC
     assert tp.login(complete=True) == {"signed_in": True, "user": "jo@acme.com"}

@@ -72,15 +72,15 @@ class TokenProvider:
         if not (result and "access_token" in result):
             try:
                 result = self.app.acquire_token_interactive(ADO_SCOPES, prompt="select_account")
-            except Exception:  # no browser or no free localhost port: use the device-code flow
-                return self._start_device_flow()
+            except Exception as exc:  # no browser or no free localhost port: use the device-code flow
+                return self._start_device_flow(interactive_error=f"{type(exc).__name__}: {str(exc)[:200]}")
         if not result or "access_token" not in result:
             raise RcaError("auth_failed", f"Sign-in failed: {(result or {}).get('error_description', 'unknown error')[:300]}",
                            'Retry rca_login; if it keeps failing, set auth.mode = "pat".')
         self._persist()
         return {"signed_in": True, "user": self.signed_in_user()}
 
-    def _start_device_flow(self) -> dict:
+    def _start_device_flow(self, interactive_error: str | None = None) -> dict:
         flow = self.app.initiate_device_flow(scopes=ADO_SCOPES)
         if "user_code" not in flow:
             raise RcaError("auth_failed", "Could not start device sign-in.",
@@ -88,7 +88,8 @@ class TokenProvider:
         self.flow_path.parent.mkdir(parents=True, exist_ok=True)
         self.flow_path.write_text(json.dumps(flow), encoding="utf-8")
         return {"signed_in": False, "device_code_message": flow["message"],
-                "verification_uri": flow["verification_uri"], "user_code": flow["user_code"]}
+                "verification_uri": flow["verification_uri"], "user_code": flow["user_code"],
+                "interactive_error": interactive_error}
 
     def _complete_device_flow(self) -> dict:
         if not self.flow_path.exists():
@@ -102,6 +103,7 @@ class TokenProvider:
         self._persist()
         return {"signed_in": True, "user": self.signed_in_user()}
 
+    # PersistedTokenCache (encrypted/DPAPI) persists itself on every write; this only covers the plain-file fallback.
     def _persist(self) -> None:
         if self._manual_persist and getattr(self.cache, "has_state_changed", False):
             self.cfg.token_cache_path.parent.mkdir(parents=True, exist_ok=True)
