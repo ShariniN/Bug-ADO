@@ -1,35 +1,20 @@
 ---
 name: rca-setup
-description: One-time setup for the ado-rca plugin on this machine (org, project, PAT env var, repo paths, field check).
+description: "Sign in to Azure DevOps and set up ado-rca on this machine: pick org and project, map RCA fields, detect the PI."
 ---
 
 # /rca-setup
 
-Create or update `~/.rca/config.toml`. Never ask for or store the PAT value itself; only the env var name.
+Use only the `rca_*` tools. Never ask for or store a PAT or password.
 
-1. Ask, one at a time, with defaults from the existing file if present:
-   - Azure DevOps org URL (e.g. `https://dev.azure.com/peopleshr`)
-   - Project name
-   - Name of the environment variable holding the PAT (default `ADO_PAT`). Tell the user how to set it persistently:
-     `[Environment]::SetEnvironmentVariable("ADO_PAT", "<token>", "User")` in PowerShell, then restart Claude Code.
-   - For each repo they fix bugs in: the repo name exactly as in Azure Repos, and its local clone path.
-2. Write `~/.rca/config.toml` (create the folder if needed):
-
-   ```toml
-   [ado]
-   org_url = "<org>"
-   project = "<project>"
-   pat_env = "<env var>"
-
-   [repos]
-   "<RepoName>" = "<C:/path/to/clone>"
-   ```
-
-   Only include `[git]` or `[fields]` tables if the user asks to override team defaults.
-3. Call `rca_fields()`.
-   - On `error` with code `no_pat` or `auth_failed`: show `fix`, and stop; tell them to rerun `/rca-setup` after fixing.
-   - If `ok` is false: for each issue show `section`, `configured`, `suggestion`. Ask whether to accept each suggestion
-     or type a reference name. Write accepted mappings under `[fields]` in `~/.rca/config.toml` and call `rca_fields()` again.
-   - If a suggestion is accepted that differs from the team default, tell the user to raise a PR updating
-     `src/rca_core/defaults/team.toml` so the whole team gets it.
-4. Finish with: `Setup complete. Run /rca <bug-id> on a bug with a linked PR.`
+1. `rca_status()`. If `auth_error.code == "auth_not_configured"`: tell the user the team's Entra app registration
+   (auth.client_id / auth.tenant_id in team.toml) is missing and stop. Nothing else works without it.
+2. If not `signed_in`: say "Opening the Microsoft sign-in page in your browser…" then `rca_login()`.
+   - If the result has `device_code_message`: show it verbatim, ask the user to reply when done, then `rca_login(complete=true)`.
+   - Report `user`.
+3. `rca_setup_options()`. If `accounts` has one entry use it; else list names and ask which. Save with
+   `rca_save_config(org_url=<account url>)`. Call `rca_setup_options()` again; pick the project the same way and save it.
+4. `rca_fields(auto_map=true)`. Report what was auto-mapped. For each remaining `issues[]` entry: show `section`,
+   `configured`, `suggestion`, and the closest 5 field names from `fields[]`; ask the user to pick or type a reference
+   name; then `rca_save_config(fields={section: ref})` and re-run `rca_fields(auto_map=true)` until `ok`.
+5. Finish: `rca_status()` and print one line: signed in as <user>, <org>/<project>, fields ok, PI is detected per run.

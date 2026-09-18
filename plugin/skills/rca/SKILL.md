@@ -1,6 +1,6 @@
 ---
 name: rca
-description: "Fill the Azure DevOps Bug RCA from the fix. Usage: /rca <bug-id> [pr:<id>] [branch:<name> repo:<name>]"
+description: "Fill the Azure DevOps Bug RCA from the fix. Usage: /rca [bug-id | work-item-url] [pr:<id>] — no argument infers the bug from the current branch"
 ---
 
 # /rca — Bug RCA from the fix
@@ -8,15 +8,18 @@ description: "Fill the Azure DevOps Bug RCA from the fix. Usage: /rca <bug-id> [
 You are filling the team's RCA template for Bug `$ARGUMENTS`. Use ONLY the `rca_*` MCP tools for data.
 Do not read repo files or run git yourself; the tools already did the searching.
 
-## 1. Gather
+## 1. Ready?
 
-1. Parse arguments: first token is the bug id; optional `pr:N`, `branch:NAME`, `repo:NAME`.
-2. Call `rca_fetch(bug_id, pr_id, branch, repo)`.
-   - If `error.code == no_linked_pr`: ask the user for the PR id, or branch and repo name, then retry once.
-   - If it returns any other `error`: show `message` and `fix` verbatim and stop.
-   - If `update_available` is set, print one line: `ado-rca <tool_version> → <update_available> available (reinstall the plugin).`
-   - If `truncated` is true, say in the draft that the diff shown was partial.
-3. Call `rca_trace(bug_id)`, then `rca_classify(bug_id)`. Stop on `error` as above.
+1. `rca_status()`. If `configured` is false or `signed_in` is false, run the steps of the rca-setup skill inline
+   (login, org/project, fields) and continue — do not tell the user to run another command.
+2. Parse `$ARGUMENTS`: an id, a work item URL, `pr:<id>`, or nothing. Call
+   `rca_fetch(bug=<id or url or "">, pr_id=<pr or null>, cwd=<the current working directory>)`.
+   - `bug_not_resolved` / `no_fix_source`: show `message` and `fix`, then ask for the bug id or PR id and retry once.
+   - `not_signed_in`: call `rca_login()` and retry once.
+   - Any other `error`: show `message` and `fix` and stop.
+   - Tell the user how the bug was resolved (`resolved.how`) and which fix source was used (`source`, PR id if any).
+   - If `truncated` is true, say the diff shown was partial. If `update_available`, print one line about it.
+3. `rca_trace(bug_id)`, then `rca_classify(bug_id)`. If `detected_pi` is set, mention it next to the proposal.
 
 ## 2. Draft
 
