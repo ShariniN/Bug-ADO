@@ -4,6 +4,7 @@ from rca_core.config import load_config
 from rca_core.operations.classify import classify_op
 from rca_core.operations.fields import fields_op
 from tests.conftest import FakeTransport
+from tests.test_iterations import TREE
 
 
 def test_classify_from_cached_trace(tmp_path):
@@ -21,6 +22,22 @@ def test_classify_without_trace_errors(tmp_path):
     cfg = load_config(user_path=tmp_path / "c.toml", env={})
     cfg.home = tmp_path
     assert classify_op(2, cfg)["error"]["code"] == "fetch_first"
+
+
+def test_classify_detects_current_pi_when_not_configured(tmp_path):
+    cfg = load_config(user_path=tmp_path / "c.toml", env={})
+    cfg.home = tmp_path
+    write_cache(cfg, 3, {"trace": {"bug_id": 3, "repo": "R", "evidence": [], "confidence_notes": [],
+                                   "culprits": [{"sha": "a" * 40, "author": "A", "date": "d", "subject": "s", "lines": 4,
+                                                 "pr_id": 7, "pr_title": "t", "work_items": [],
+                                                 "parent_chain": [{"id": 600, "type": "Feature", "title": "Payroll v2",
+                                                                   "iteration": "Acme\\PI-14\\Sprint 4", "state": "Active"}],
+                                                 "release_branches": ["release/10.1"], "earliest_version": "10.1"}]}})
+    t = FakeTransport({("GET", "/classificationnodes/Iterations"): TREE})
+    client = AdoClient("https://dev.azure.com/acme", "Acme", t)
+    out = classify_op(3, cfg, client=client, today="2026-09-18")
+    assert out["classification"] == "Feature Bug" and out["confidence"] == "high"
+    assert out["detected_pi"] == "Acme\\PI-14"
 
 
 def test_fields_op_reports_issues(tmp_path):

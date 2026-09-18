@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Callable
 
 from rca_core.ado_client import AdoClient
+from rca_core.ado_history import AdoHistory
 from rca_core.cache import write_cache
 from rca_core.config import Config
 from rca_core.diffparse import cap_hunks, parse_unified_diff
 from rca_core.errors import RcaError, guarded
-from rca_core.git_forensics import GitRepo
+from rca_core.git_forensics import GitRepo, find_repo_root
 from rca_core.models import BugInfo, PullRequestInfo, to_dict
+from rca_core.resolve import resolve_bug
 
 FETCH_CAP_BYTES = 6000
 _TAGS = re.compile(r"<[^>]+>")
@@ -34,72 +37,83 @@ def bug_from_work_item(w: dict) -> BugInfo:
     )
 
 
-def _resolve_target(repo: GitRepo, cfg: Config) -> str:
-    for ref in (f"origin/{cfg.default_target_branch}", cfg.default_target_branch):
-        if repo.has_ref(ref):
-            return ref
-    raise RcaError("repo_not_cloned", f"Neither origin/{cfg.default_target_branch} nor {cfg.default_target_branch} exists in {repo.path}.",
-                   "Fetch the repo or set git.default_target_branch in ~/.rca/config.toml.")
+def _pr_diff(pr: PullRequestInfo, hist: AdoHistory, client: AdoClient) -> tuple[str, str, str]:
+    """(base, head, diff_text) for a PR, using the merge commit when the source commit no longer exists."""
+    head = pr.source_sha
+    if head and hist.commit_exists(head) and pr.target_sha:
+        base = hist.merge_base(pr.target_sha, head)
+        if base:
+            return base, head, hist.diff(base, head)
+    if pr.merge_sha:
+        info = client.get_commit(pr.repo_id, pr.merge_sha)
+        if info["parents"]:
+            return info["parents"][0], pr.merge_sha, hist.diff(info["parents"][0], pr.merge_sha)
+    raise RcaError("history_unavailable", f"Azure DevOps has neither the source nor the merge commit of PR {pr.id}.",
+                   "Check the PR still exists and was pushed to this project; otherwise run /rca from your fix branch.")
+
+
+def _origin_repo_id(g: GitRepo, client: AdoClient) -> str | None:
+    url = g.run("config", "--get", "remote.origin.url", check=False).strip()
+    name = url.rstrip("/").split("/")[-1].removesuffix(".git") if url else ""
+    if not name:
+        return None
+    for r in client.list_repositories():
+        if r["name"].lower() == name.lower():
+            return r["id"]
+    return None
 
 
 @guarded
-def fetch(bug_id: int, cfg: Config, client: AdoClient, pr_id: int | None = None, branch: str | None = None,
-          repo: str | None = None, repo_factory: Callable[..., GitRepo] = GitRepo) -> dict:
-    bug = bug_from_work_item(client.get_work_item(bug_id))
+def fetch(bug: str | int | None, cfg: Config, client: AdoClient, pr_id: int | None = None, cwd: Path | None = None,
+          history_factory: Callable[..., AdoHistory] = AdoHistory, repo_factory: Callable[..., GitRepo] = GitRepo) -> dict:
+    cwd = Path.cwd() if cwd is None else Path(cwd)
+    resolved = resolve_bug(bug, client, cwd)
+    bug_id = resolved["bug_id"]
+    info = bug_from_work_item(client.get_work_item(bug_id))
     pr: PullRequestInfo | None = None
-    source = "branch"
+    root = find_repo_root(cwd)
 
-    if branch is None:
-        candidates = bug.pr_ids
-        if pr_id is not None:
-            matching = [c for c in candidates if c[1] == pr_id]
-            if matching:
-                candidates = matching
-            elif candidates:
-                candidates = [(candidates[0][0], pr_id)]
-            elif repo:
-                candidates = [(repo, pr_id)]
-        if not candidates:
-            raise RcaError("no_linked_pr", f"Bug {bug_id} has no linked pull request.",
-                           "Link the PR to the Bug in Azure DevOps, or pass pr_id together with repo=<name>, or pass the branch name and repo to use the local branch instead.")
-        repo_id, chosen = candidates[-1]
-        pr = client.get_pull_request(repo_id, chosen)
-        repo_name = pr.repo_name
-        source = "pr"
-    else:
-        if not repo:
-            raise RcaError("repo_not_configured", "Branch mode needs the repo name.",
-                           "Pass repo=<name as in [repos] of ~/.rca/config.toml>.")
-        repo_name = repo
+    if pr_id is not None:
+        repo_id = next((c[0] for c in info.pr_ids if c[1] == pr_id), None) or client.pr_repo_id(pr_id)
+        pr = client.get_pull_request(repo_id, pr_id)
+    elif info.pr_ids:
+        pr = client.get_pull_request(*info.pr_ids[-1])
+    elif resolved.get("pr_id"):
+        pr = client.get_pull_request(resolved["repo_id"], resolved["pr_id"])
+    elif root is not None:
+        branch = repo_factory(root).current_branch()
+        prs = client.find_prs_by_source_branch(branch)
+        if prs:
+            pr = client.get_pull_request(prs[0]["repo_id"], prs[0]["id"])
 
-    g = repo_factory(cfg.repo_path(repo_name))
-    g.fetch()
     if pr is not None:
-        head_sha, base_sha = pr.source_sha, pr.target_sha
-        if not g.has_ref(head_sha):
-            # Source branch deleted after a squash/rebase merge (ADO default): diff the merge commit itself.
-            if pr.merge_sha and g.has_ref(pr.merge_sha):
-                head_sha = pr.merge_sha
-                base_sha = g.rev_parse(f"{pr.merge_sha}^1")
-            else:
-                raise RcaError("repo_not_cloned", f"Commit {head_sha[:8]} from PR {pr.id} is not in the local clone.",
-                               f"Run 'git fetch origin' in {g.path} (the PR branch may have been deleted; fetch refs/pull/{pr.id}/merge).")
-        else:
-            base_sha = g.merge_base(base_sha, head_sha)
+        hist = history_factory(client, pr.repo_id)
+        base_sha, head_sha, diff_text = _pr_diff(pr, hist, client)
+        source, repo_name, repo_id = "pr", pr.repo_name, pr.repo_id
     else:
-        target = _resolve_target(g, cfg)
-        if not g.has_ref(branch):
-            raise RcaError("repo_not_cloned", f"Branch '{branch}' does not exist in the local clone at {g.path}.",
-                           f"Run 'git fetch origin' in {g.path} or check the branch name (try origin/{branch}).")
-        head_sha = g.rev_parse(branch)
+        if root is None:
+            raise RcaError("no_fix_source", f"Bug {bug_id} has no linked PR and {cwd} is not a git repository.",
+                           "Link the fix PR to the Bug, pass pr_id, or run /rca from inside the repo on your fix branch.")
+        g = repo_factory(root)
+        branch = g.current_branch()
+        if branch == cfg.default_target_branch:
+            raise RcaError("no_fix_source", f"Bug {bug_id} has no linked PR and the current branch is '{branch}'.",
+                           "Check out your fix branch (or pass pr_id) and run /rca again.")
+        g.fetch()
+        target = next((t for t in (f"origin/{cfg.default_target_branch}", cfg.default_target_branch) if g.has_ref(t)), None)
+        if target is None:
+            raise RcaError("no_fix_source", f"Neither origin/{cfg.default_target_branch} nor {cfg.default_target_branch} exists in {root}.",
+                           "Fetch the repo or set git.default_target_branch in ~/.rca/config.toml.")
+        head_sha = g.rev_parse("HEAD")
         base_sha = g.merge_base(target, head_sha)
+        diff_text = g.diff(base_sha, head_sha)
+        source, repo_name, repo_id = "branch", root.name, _origin_repo_id(g, client)
 
-    files = parse_unified_diff(g.diff(base_sha, head_sha))
+    files = parse_unified_diff(diff_text)
     capped, truncated = cap_hunks(files, FETCH_CAP_BYTES)
-
-    full = {"bug": to_dict(bug), "pr": to_dict(pr) if pr else None, "source": source, "repo": repo_name,
-            "base_sha": base_sha, "head_sha": head_sha, "files_full": to_dict(files)}
-    # A refetch invalidates any previously cached trace for this bug (write_cache merges, so clear it explicitly).
-    path = write_cache(cfg, bug_id, {**full, "trace": None})
-    return {**{k: v for k, v in full.items() if k != "files_full"},
-            "files": to_dict(capped), "truncated": truncated, "cache_path": str(path)}
+    full = {"bug_id": bug_id, "bug": to_dict(info), "pr": to_dict(pr) if pr else None, "source": source,
+            "repo": repo_name, "repo_id": repo_id, "resolved": resolved, "base_sha": base_sha, "head_sha": head_sha,
+            "files_full": to_dict(files)}
+    path = write_cache(cfg, bug_id, {**full, "trace": None, "pi": None})
+    return {**{k: v for k, v in full.items() if k != "files_full"}, "files": to_dict(capped),
+            "truncated": truncated, "cache_path": str(path)}

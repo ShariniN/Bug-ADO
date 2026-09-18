@@ -1,9 +1,14 @@
 from __future__ import annotations
 
-from rca_core.cache import read_cache
+import dataclasses
+from datetime import date
+
+from rca_core.ado_client import AdoClient
+from rca_core.cache import read_cache, write_cache
 from rca_core.classifier import classify
 from rca_core.config import Config
 from rca_core.errors import RcaError, guarded
+from rca_core.iterations import current_pi
 from rca_core.models import Culprit, TraceResult, WorkItemRef, to_dict
 
 
@@ -19,8 +24,17 @@ def trace_from_dict(d: dict) -> TraceResult:
 
 
 @guarded
-def classify_op(bug_id: int, cfg: Config, trace_data: dict | None = None) -> dict:
-    data = trace_data or read_cache(cfg, bug_id).get("trace")
+def classify_op(bug_id: int, cfg: Config, trace_data: dict | None = None, client: AdoClient | None = None,
+                today: str | None = None) -> dict:
+    cached = read_cache(cfg, bug_id)
+    data = trace_data if trace_data is not None else cached.get("trace")
     if not data:
         raise RcaError("fetch_first", f"No trace cached for bug {bug_id}.", "Run rca_fetch then rca_trace first.")
-    return to_dict(classify(trace_from_dict(data), cfg))
+    detected = None
+    if not cfg.current_pi and client is not None:
+        detected = cached.get("pi") or current_pi(client.iteration_tree(), today or date.today().isoformat())
+        write_cache(cfg, bug_id, {"pi": detected})
+        cfg = dataclasses.replace(cfg, current_pi=detected or "")
+    out = to_dict(classify(trace_from_dict(data), cfg))
+    out["detected_pi"] = detected
+    return out
