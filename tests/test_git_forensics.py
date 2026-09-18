@@ -1,5 +1,5 @@
 from rca_core.diffparse import parse_unified_diff
-from rca_core.git_forensics import blame_hunks
+from rca_core.git_forensics import blame_hunks, find_repo_root
 from rca_core.models import Hunk
 
 
@@ -63,3 +63,11 @@ def test_addition_hunks_are_ignored_when_fix_also_removes_lines(git_repo):
     added = Hunk(old_path="pay.py", new_path="pay.py", old_start=3, old_len=0, new_start=4, new_len=1, text="+    # x")
     counts = blame_hunks(repo, sha["ws"], real + [added])
     assert counts == {sha["culprit"]: 1}
+
+
+def test_find_repo_root(git_repo, tmp_path):
+    repo, sha = git_repo
+    sub = repo.path / "a" / "b"
+    sub.mkdir(parents=True)
+    assert find_repo_root(sub) == repo.path.resolve() or find_repo_root(sub) == repo.path
+    assert find_repo_root(tmp_path / "nowhere") is None

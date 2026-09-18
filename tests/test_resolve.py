@@ -50,3 +50,32 @@ def test_branch_name_id(git_repo):
               ("GET", "/workitems/12345?"): wi(12345, "Bug", "Crash")}
     out = resolve_bug(None, client(routes), repo.path)
     assert out["bug_id"] == 12345 and out["pr_id"] is None and "branch name" in out["how"]
+
+
+def test_branch_name_id_from_subdirectory(git_repo):
+    repo, sha = git_repo
+    repo.run("checkout", "-q", "-b", "bugfix/12345-crash")
+    sub = repo.path / "src" / "deep"
+    sub.mkdir(parents=True)
+    routes = {("GET", "/_apis/git/pullrequests?searchCriteria.sourceRefName="): {"value": []},
+              ("GET", "/workitems/12345?"): wi(12345, "Bug", "Crash")}
+    assert resolve_bug("", client(routes), sub)["bug_id"] == 12345
+
+
+def test_only_real_work_item_urls_match():
+    with pytest.raises(RcaError):
+        resolve_bug("https://example.com/edit/123", client(), None)
+
+
+def test_auth_errors_propagate_from_branch_scan(git_repo):
+    repo, sha = git_repo
+    repo.run("checkout", "-q", "-b", "bugfix/12345-crash")
+
+    def boom(_):
+        raise RcaError("auth_failed", "rejected", "sign in")
+
+    routes = {("GET", "/_apis/git/pullrequests?searchCriteria.sourceRefName="): {"value": []},
+              ("GET", "/workitems/12345?"): boom}
+    with pytest.raises(RcaError) as e:
+        resolve_bug("", client(routes), repo.path)
+    assert e.value.code == "auth_failed"

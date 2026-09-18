@@ -88,6 +88,14 @@ class GitRepo:
         return None
 
 
+def find_repo_root(path: Path | None) -> Path | None:
+    """Top-level directory of the git repo containing `path`, or None when it is not inside one."""
+    if path is None or not Path(path).exists():
+        return None
+    proc = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=Path(path), capture_output=True, text=True, encoding="utf-8", errors="replace")
+    return Path(proc.stdout.strip()) if proc.returncode == 0 and proc.stdout.strip() else None
+
+
 class BlameSource(Protocol):
     def blame_lines(self, sha: str, path: str, start: int, end: int) -> dict[int, str]: ...
 
