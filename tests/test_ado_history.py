@@ -41,7 +41,7 @@ def test_diff_builds_unified_diff_from_contents():
     files = parse_unified_diff(h.diff("c3", "c4"))
     assert [(f.path, f.change) for f in files] == [("pay.py", "modify"), ("new.txt", "add")]
     hk = files[0].hunks[0]
-    assert hk.old_start == 3 and "-    return a + b" in hk.text and "+    return a + b  # v4" in hk.text
+    assert hk.old_start == 1 and "-    return a + b" in hk.text and "+    return a + b  # v4" in hk.text
     assert files[1].hunks[0].text == "+hello"
 
 
@@ -51,8 +51,8 @@ def test_branches_containing_via_merge_bases():
 
 
 def test_history_truncated_flag():
-    h = AdoHistory(AdoClient("https://dev.azure.com/acme", "Acme", FakeTransport(history_routes(R, "pay.py", VERSIONS[2:]))), R, history_top=2)
-    assert h.blame_lines("c2", "pay.py", 2, 2) == {2: "c1"}
+    h = AdoHistory(AdoClient("https://dev.azure.com/acme", "Acme", FakeTransport(history_routes(R, "pay.py", VERSIONS[1:3]))), R, history_top=2)
+    assert h.blame_lines("c3", "pay.py", 2, 2) == {2: "c2"}
     assert h.history_truncated is True
 
 
