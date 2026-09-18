@@ -24,7 +24,8 @@ class Transport(Protocol):
 
 class RequestsTransport:
     def __init__(self, pat: str | None = None, token_provider: Callable[[], str] | None = None, timeout: float = 30.0,
-                 sleep: Callable[[float], None] = time.sleep, on_unauthorized: Callable[[], None] | None = None) -> None:
+                 sleep: Callable[[float], None] = time.sleep, on_unauthorized: Callable[[], None] | None = None,
+                 refresh_token: Callable[[], str | None] | None = None) -> None:
         if not pat and token_provider is None:
             raise ValueError("RequestsTransport needs a PAT or a token provider")
         self.session = requests.Session()
@@ -34,6 +35,7 @@ class RequestsTransport:
         self.token_provider = token_provider
         self.timeout = timeout
         self.sleep, self.on_unauthorized = sleep, on_unauthorized
+        self.refresh_token = refresh_token
 
     @staticmethod
     def _delay_hint(resp) -> float:
@@ -54,7 +56,8 @@ class RequestsTransport:
                 return kind
         return "resource"
 
-    def _send(self, method: str, url: str, json: Any, content_type: str, accept: str | None = None, _retried: bool = False):
+    def _send(self, method: str, url: str, json: Any, content_type: str, accept: str | None = None,
+              _401_retried: bool = False, _429_retried: bool = False):
         headers = {"Content-Type": content_type}
         if accept:
             headers["Accept"] = accept
@@ -64,14 +67,26 @@ class RequestsTransport:
         delay = self._delay_hint(resp)
         if delay:
             self.sleep(delay)
-        if resp.status_code == 429 and not _retried:
-            return self._send(method, url, json, content_type, accept, _retried=True)
+        if resp.status_code == 429:
+            if not _429_retried:
+                if not delay:
+                    self.sleep(2.0)
+                return self._send(method, url, json, content_type, accept, _401_retried=_401_retried, _429_retried=True)
+            raise RcaError("throttled", "Azure DevOps is rate-limiting requests right now.",
+                           "Wait a minute and run the command again.", debug=url)
         if resp.status_code in (401, 203):  # 203 = HTML sign-in page
             if self.token_provider is not None:
+                if self.refresh_token and not _401_retried:
+                    new_token = self.refresh_token()
+                    if new_token:
+                        return self._send(method, url, json, content_type, accept,
+                                          _401_retried=True, _429_retried=_429_retried)
                 if self.on_unauthorized:
                     self.on_unauthorized()
-                raise RcaError("not_signed_in", "Your Azure DevOps sign-in has expired or was rejected.",
-                               "Sign in again with rca_login (or /rca-setup) and retry.", debug=f"{resp.status_code} {url}")
+                raise RcaError("not_signed_in", "Azure DevOps rejected your sign-in for this organization.",
+                               "Sign in again with rca_login, or check that your account has access to the "
+                               "organization in ado.org_url (TF400813 means no access) — run /rca-setup to pick "
+                               "another org.", debug=f"{resp.status_code} {url}")
             raise RcaError("auth_failed", "Azure DevOps rejected the personal access token.",
                            "Check the PAT's expiry and that it has Work Items (read/write) and Code (read) scopes.")
         if resp.status_code == 404:

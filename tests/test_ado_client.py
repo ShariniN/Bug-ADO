@@ -128,6 +128,24 @@ def test_429_retries_once():
     assert sleeps == [1.0]
 
 
+def test_429_without_hint_sleeps_floor_then_retries():
+    sleeps = []
+    queue = [_resp(429), _resp(200, headers={}, content=b"x", json_body={"ok": True})]
+    tr = RequestsTransport(pat="p", sleep=sleeps.append)
+    tr.session.request = lambda *a, **k: queue.pop(0)
+    assert tr.request("GET", "https://x") == {"ok": True}
+    assert sleeps == [2.0]
+
+
+def test_429_twice_raises_throttled():
+    sleeps = []
+    tr = RequestsTransport(pat="p", sleep=sleeps.append)
+    tr.session.request = lambda *a, **k: _resp(429)
+    with pytest.raises(RcaError) as e:
+        tr.request("GET", "https://x")
+    assert e.value.code == "throttled"
+
+
 def test_401_bearer_is_not_signed_in_and_invalidates():
     calls = []
     tr = RequestsTransport(token_provider=lambda: "tok", on_unauthorized=lambda: calls.append(1))
@@ -138,6 +156,39 @@ def test_401_bearer_is_not_signed_in_and_invalidates():
     assert e.value.code == "not_signed_in"
     assert e.value.debug is not None
     assert "http" not in e.value.message.lower()
+
+
+def test_401_refreshes_once_then_succeeds_without_invalidating():
+    calls = []
+    token = ["old"]
+    queue = [_resp(401), _resp(200, headers={}, content=b"x", json_body={"ok": True})]
+    seen_headers = []
+
+    def fake(method, url, json=None, headers=None, timeout=None):
+        seen_headers.append(headers)
+        return queue.pop(0)
+
+    def refresh():
+        token[0] = "new"
+        return "new"
+
+    tr = RequestsTransport(token_provider=lambda: token[0], on_unauthorized=lambda: calls.append(1),
+                            refresh_token=refresh)
+    tr.session.request = fake
+    assert tr.request("GET", "https://x") == {"ok": True}
+    assert calls == []
+    assert seen_headers[1]["Authorization"] == "Bearer new"
+
+
+def test_401_twice_still_invalidates_once_despite_refresh():
+    calls = []
+    tr = RequestsTransport(token_provider=lambda: "tok", on_unauthorized=lambda: calls.append(1),
+                            refresh_token=lambda: "still-bad")
+    tr.session.request = lambda *a, **k: _resp(401)
+    with pytest.raises(RcaError) as e:
+        tr.request("GET", "https://x")
+    assert e.value.code == "not_signed_in"
+    assert calls == [1]
 
 
 def test_401_pat_is_auth_failed():

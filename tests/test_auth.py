@@ -100,6 +100,21 @@ def test_persist_tokens_false_never_writes_cache(tmp_path):
     assert not c.token_cache_path.exists()
 
 
+def test_force_refresh_returns_new_token(tmp_path):
+    app = FakeMsalApp(accounts=ACC, silent={"access_token": "refreshed"})
+    tp = provider(tmp_path, app)
+    assert tp.force_refresh() == "refreshed"
+
+
+def test_force_refresh_never_raises(tmp_path):
+    class BoomApp(FakeMsalApp):
+        def acquire_token_silent(self, scopes, account=None, force_refresh=None):
+            raise RuntimeError("network down")
+
+    tp = provider(tmp_path, BoomApp(accounts=ACC))
+    assert tp.force_refresh() is None
+
+
 def test_invalidate_removes_account(tmp_path):
     app = FakeMsalApp(accounts=ACC)
     tp = provider(tmp_path, app)

@@ -16,7 +16,7 @@ class FakeMsalApp:
     def remove_account(self, account):
         self.accounts = [a for a in self.accounts if a is not account]
 
-    def acquire_token_silent(self, scopes, account=None):
+    def acquire_token_silent(self, scopes, account=None, force_refresh=None):
         self.calls.append("silent")
         return self.silent
 

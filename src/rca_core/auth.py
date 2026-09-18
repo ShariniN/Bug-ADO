@@ -167,6 +167,16 @@ class TokenProvider:
         self._persist()
         return {"signed_in": True, "user": self.signed_in_user()}
 
+    def force_refresh(self) -> str | None:
+        """Force a silent token refresh (bypassing MSAL's own cache), for the transport to call on a 401
+        before giving up and invalidating the session. Never raises; returns None on any failure."""
+        try:
+            acc = self._account()
+            result = self.app.acquire_token_silent(ADO_SCOPES, account=acc, force_refresh=True) if acc else None
+            return result.get("access_token") if result else None
+        except Exception:
+            return None
+
     def invalidate(self) -> None:
         """Forget the cached account (after a 401) so the next call asks the user to sign in again."""
         for acc in list(self.app.get_accounts()):
